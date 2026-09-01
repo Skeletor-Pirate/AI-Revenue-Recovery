@@ -290,4 +290,40 @@ This project is being built *for* Razorpay, evaluated *by* Razorpay engineers, o
 
 ## 12. Current status
 
-Nothing has been built yet in this repo — start from Section 9, step 1.
+**Live status lives in [documentation.md](documentation.md) §13** (build table) and
+[architecture.md](architecture.md) §2 (pipeline diagram). Summary as of
+2026-08-28:
+
+- **Done:** Section 9 step 1 (`backend/app/db/store.py` — shared event store) and
+  step 2 (`backend/app/data/generate.py` — synthetic batch + fraud cluster).
+- **Next:** step 3, `backend/app/agents/detection.py`.
+- **Approved deviations from this brief:** PostgreSQL (not SQLite) — run as a
+  local process via `scripts/pg.ps1` since Docker needs WSL2 (unavailable on this
+  Win 11 Home box); `uv` (not `pip`/`requirements.txt`); a FastAPI **backend/** +
+  React **frontend/** monorepo instead of a single Streamlit app (Streamlit
+  dropped). Repo layout in Section 8 is superseded by the tree in
+  `documentation.md` §2.
+
+---
+
+## 13. Documentation upkeep (non-negotiable)
+
+Two living docs must be kept accurate. **In the same change** that adds or alters
+a file, function, class, API endpoint, DB table/column, enum value, config key,
+CLI, or command — update BOTH:
+
+| File | Holds | Update when |
+|---|---|---|
+| [`documentation.md`](documentation.md) | Exhaustive reference: file-by-file table (path → purpose → status); every public function/class with signature + return + notes; every DB column; every Pydantic schema; every endpoint (method, path, handler, response); the runbook; the test inventory; the Section 9 build-status table. | Any code, schema, endpoint, dependency, or command change. |
+| [`architecture.md`](architecture.md) | Diagrams (Mermaid): agent pipeline, runtime topology, ERD, event-lifecycle state machine, request-flow sequence. Plus component-responsibility table, design-decision log, tech-stack table. | Any change to the agent flow, data model, runtime topology, or a design decision. |
+
+Rules:
+- Prefer **tables** and Mermaid diagrams over prose.
+- Every file in the repo appears in `documentation.md` §3 with a one-line purpose
+  and a status (done / scaffold / planned / stretch).
+- When a diagram's boxes change state (built vs not), recolour them
+  (`classDef done` / `classDef todo` in `architecture.md` §2).
+- Bump the "Last updated" line in both files and note which Section 9 step the
+  change corresponds to.
+- If a change contradicts this brief, record it under "approved deviations" in
+  Section 12 above — do not silently diverge.

@@ -1,0 +1,32 @@
+# Postgres for the AI Revenue Recovery pipeline.
+#
+# NOT the active path on the current dev machine: Docker Desktop needs WSL2,
+# which isn't installed, and Windows 11 Home has no Hyper-V fallback. We run a
+# self-contained local PostgreSQL via `scripts/pg.ps1` instead (see
+# documentation.md section 11). This file is kept for anyone on a box where
+# Docker works.
+#
+#   Start:  docker compose up -d
+#   Stop:   docker compose down          (keeps data)
+#   Wipe:   docker compose down -v       (deletes the volume)
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: revrec_db
+    environment:
+      POSTGRES_USER: revrec
+      POSTGRES_PASSWORD: revrec
+      POSTGRES_DB: revrec
+    ports:
+      - "5432:5432"          # host:container -- reach it at localhost:5432
+    volumes:
+      - revrec_pgdata:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/01-init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U revrec -d revrec"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  revrec_pgdata:

@@ -1,0 +1,26 @@
+[project]
+name = "razorpay-revenue-recovery-backend"
+version = "0.1.0"
+description = "AI Revenue Recovery agent pipeline — Razorpay AI Buildathon (Track 03)"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "sqlmodel>=0.0.22",
+    "psycopg[binary]>=3.2",
+    "razorpay>=1.4.2",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "pydantic-settings>=2.2.0",
+    "pandas>=2.2.0",
+    "python-dotenv>=1.0.0",
+    "faker>=25.0.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

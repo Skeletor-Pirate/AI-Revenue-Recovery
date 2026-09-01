@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.uv/
+.pytest_cache/
+
+# env / secrets
+.env
+*.local
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# data
+**/data/synthetic_events.csv
+
+# OS
+.DS_Store
+Thumbs.db
