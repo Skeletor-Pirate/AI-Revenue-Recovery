@@ -14,14 +14,14 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion, WebFetch
 
 # glass-scroll-3d
 
-A composite frontend skill. It does not replace its three parts — it sequences
-them and owns the seams between them.
+The `glass-scroll-3d` mode of the `frontend` skill. It does not replace its three
+parts — it sequences them and owns the seams between them.
 
-| Layer | Owned by | This skill adds |
+| Layer | Owned by | This mode adds |
 |---|---|---|
-| Page grammar, feeling curve, scroll score, verification | **`scroll-craft`** skill | when to swap its video `scrub` device for an R3F scene |
+| Page grammar, feeling curve, scroll score, verification | **`../scroll-craft/GUIDE.md`** | when to swap its video `scrub` device for an R3F scene |
 | 3D / WebGL scene, camera, materials, scroll-linked animation | **`references/react-three-fiber.md`** here | the R3F ↔ scroll-progress binding |
-| Nav / cards / HUD that read as glass | **`liquid-glass`** skill | using R3F canvas as the refracted backdrop, DOM glass on top |
+| Nav / cards / HUD that read as glass | **`../liquid-glass/GUIDE.md`** | using R3F canvas as the refracted backdrop, DOM glass on top |
 
 ## Order of work
 
@@ -29,7 +29,7 @@ them and owns the seams between them.
    source-check) if this page is for the Buildathon
    submission (dashboard, landing, pitch site) — match Razorpay's product
    language and visual tone before choosing an aesthetic.
-2. **Invoke the `scroll-craft` skill and do its Step 0 interview verbatim.** Do
+2. **Follow `../scroll-craft/GUIDE.md` and do its Step 0 interview verbatim.** Do
    not skip it. The grammar, journey, feeling curve, and signature move all come
    from there. The only change: when a beat's device would be a video `scrub`,
    consider an R3F scene scrubbed by the same scroll progress instead (see
@@ -42,7 +42,7 @@ them and owns the seams between them.
      viewport (`<Canvas>` inside a pinned section, unmounted otherwise). Best
      for distinct scenes. Cheaper on the GPU.
 4. **Build the R3F scene(s)** per `references/react-three-fiber.md`.
-5. **Add the liquid-glass DOM chrome** per the `liquid-glass` skill. The glass
+5. **Add the liquid-glass DOM chrome** per `../liquid-glass/GUIDE.md`. The glass
    panels sit in normal DOM stacking above the canvas; `backdrop-filter`
    refracts whatever is painted behind — including a WebGL canvas — so the 3D
    scene shows through the glass rim for free.

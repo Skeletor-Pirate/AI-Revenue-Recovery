@@ -6,6 +6,25 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-03 — Merged the four frontend skills into one `frontend` skill
+
+- **Did:** Combined `scroll-craft`, `liquid-glass`, `glass-scroll-3d`, and
+  `revrec-dashboard` into a single `.claude/skills/frontend/` skill with a new
+  router `SKILL.md` (four modes + routing rules). Each former skill moved to
+  `.claude/skills/frontend/<name>/` (`git mv`, history preserved) with its
+  `SKILL.md` renamed to `GUIDE.md`; all bundled `engine/`, `scripts/`,
+  `references/`, `templates/`, `demo/` files kept in place. Repointed
+  cross-references: `glass-scroll-3d` and `revrec-dashboard` guides now cite
+  `../scroll-craft/GUIDE.md` / `../liquid-glass/GUIDE.md` as sibling dirs instead
+  of "the X skill". Tooling/process only — no plan.md §9 build-order step.
+- **Verified:** No external Razorpay lookup needed (no product/API surface
+  touched).
+- **Docs:** documentation.md §3.1 + header bumped. architecture.md unchanged
+  (no diagram touches this). No plan.md §12 deviation.
+- **Next:** Resume build-order step 3 — `backend/app/agents/detection.py`.
+
+---
+
 ## 2026-09-03 — Added the `build-workflow` skill; absorbed `razorpay-source-check`
 
 - **Did:** Created `.claude/skills/build-workflow/SKILL.md` — a mandatory

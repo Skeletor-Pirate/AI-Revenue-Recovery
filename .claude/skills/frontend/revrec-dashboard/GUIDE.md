@@ -19,13 +19,13 @@ The dashboard shows what the four agents did: money at risk, money recovered by
 root cause, every bounded decision, and every case that was *not* recovered with
 the reason why. It must look like one product, not a pile of widgets.
 
-## How this combines with the other skills
+## How this combines with the other modes
 
-| Skill | Role here | Do |
+| Source | Role here | Do |
 |---|---|---|
-| **`dataviz`** | chart method — form choice, color-by-job, the six checks, anti-patterns | Read it before writing any chart. Its palette values are already baked into `references/tokens.css`. |
-| **`liquid-glass`** | the elevated surfaces — KPI cards, the top nav, the per-case detail drawer, modals | Glass for *chrome and focus surfaces only*. Follow its CSS recipe + `liquidGlass(ref.current)` in `useEffect`. |
-| **`scroll-craft`** | **not used on dashboard pages** | Only the welcome/landing route. A dashboard is a document you read and filter, not a scroll timeline. |
+| **`dataviz`** skill | chart method — form choice, color-by-job, the six checks, anti-patterns | Read it before writing any chart. Its palette values are already baked into `references/tokens.css`. |
+| **`../liquid-glass/GUIDE.md`** | the elevated surfaces — KPI cards, the top nav, the per-case detail drawer, modals | Glass for *chrome and focus surfaces only*. Follow its CSS recipe + `liquidGlass(ref.current)` in `useEffect`. |
+| **`../scroll-craft/GUIDE.md`** | **not used on dashboard pages** | Only the welcome/landing route. A dashboard is a document you read and filter, not a scroll timeline. |
 
 ### Where liquid glass goes — and where it must not
 
