@@ -1,0 +1,107 @@
+/* =============================================================================
+   revrec-dashboard design tokens — the single source of colour for the dashboard.
+   Merge into frontend/src/index.css AFTER `@import "tailwindcss";`.
+
+   Values are the dataviz skill's validated default palette (references/palette.md).
+   If you swap these for Razorpay brand hues, re-run the dataviz validator:
+     node <dataviz>/scripts/validate_palette.js "<hex,hex,...>" --mode light
+     node <dataviz>/scripts/validate_palette.js "<hex,hex,...>" --mode dark --surface #1a1a19
+   ============================================================================= */
+
+/* ---- Tailwind v4 theme tokens (generate utilities: bg-surface-1, text-ink, …) */
+@theme {
+  --color-plane:        #f9f9f7;   /* page background            */
+  --color-surface-1:    #fcfcfb;   /* card / table / chart surface */
+  --color-surface-2:    #f2f2ef;   /* subtle inset / hover row    */
+  --color-ink:          #0b0b0b;   /* primary text                */
+  --color-ink-soft:     #52514e;   /* secondary text              */
+  --color-ink-muted:    #898781;   /* axis ticks, meta labels     */
+  --color-hairline:     #e1e0d9;   /* gridlines, dividers         */
+  --color-ring:         rgba(11,11,11,0.10);
+
+  /* categorical series — FIXED ORDER, never cycle, never reassign by rank */
+  --color-series-1:     #2a78d6;   /* blue    */
+  --color-series-2:     #eb6834;   /* orange  */
+  --color-series-3:     #1baf7a;   /* aqua    */
+  --color-series-4:     #eda100;   /* yellow  */
+  --color-series-5:     #e87ba4;   /* magenta */
+  --color-series-6:     #008300;   /* green   */
+  --color-series-7:     #4a3aa7;   /* violet  */
+  --color-series-8:     #e34948;   /* red     */
+
+  /* status — reserved, never reused as a series colour; always ship icon+label */
+  --color-status-good:      #0ca30c;   /* recovered            */
+  --color-status-warning:   #fab219;   /* exception (couldn't) */
+  --color-status-serious:   #ec835a;   /* needs human approval */
+  --color-status-critical:  #d03b3b;   /* flagged (halted)     */
+
+  --color-delta-up:     #006300;   /* good delta text (light) */
+
+  /* sequential ramp (heatmap / choropleth) — one hue, light→dark */
+  --color-seq-100: #cde2fb; --color-seq-200: #9ec5f4; --color-seq-300: #6da7ec;
+  --color-seq-400: #3987e5; --color-seq-500: #256abf; --color-seq-600: #184f95;
+  --color-seq-700: #0d366b;
+
+  /* liquid-glass panel dressing (used by GlassCard, not the effect itself) */
+  --glass-tint-from:  rgba(14,14,22,0.14);
+  --glass-tint-to:    rgba(14,14,22,0.28);
+  --glass-radius:     20px;
+}
+
+/* ---- Runtime custom props for charts + JS (Recharts reads these via getComputedStyle
+        or you pass the literals). Scope `.viz-root` per the dataviz palette guide. */
+.viz-root {
+  color-scheme: light;
+  --surface-1: var(--color-surface-1);
+  --text-primary: var(--color-ink);
+  --text-secondary: var(--color-ink-soft);
+  --text-muted: var(--color-ink-muted);
+  --gridline: var(--color-hairline);
+  --baseline: #c3c2b7;
+}
+
+/* ---- Dark mode — its own steps from the same ramps, NOT an auto-flip.
+        Covers OS setting and an explicit [data-theme] toggle (toggle wins both ways). */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    --color-plane:     #0d0d0d;
+    --color-surface-1: #1a1a19;
+    --color-surface-2: #232321;
+    --color-ink:       #ffffff;
+    --color-ink-soft:  #c3c2b7;
+    --color-ink-muted: #898781;
+    --color-hairline:  #2c2c2a;
+    --color-ring:      rgba(255,255,255,0.10);
+
+    --color-series-1: #3987e5; --color-series-2: #d95926; --color-series-3: #199e70;
+    --color-series-4: #c98500; --color-series-5: #d55181; --color-series-6: #008300;
+    --color-series-7: #9085e9; --color-series-8: #e66767;
+
+    --color-delta-up: #0ca30c;
+    --glass-tint-from: rgba(4,4,8,0.30);
+    --glass-tint-to:   rgba(4,4,8,0.46);
+  }
+  :root:where(:not([data-theme="light"])) .viz-root { color-scheme: dark; --baseline: #383835; }
+}
+:root[data-theme="dark"] {
+  --color-plane:     #0d0d0d;
+  --color-surface-1: #1a1a19;
+  --color-surface-2: #232321;
+  --color-ink:       #ffffff;
+  --color-ink-soft:  #c3c2b7;
+  --color-ink-muted: #898781;
+  --color-hairline:  #2c2c2a;
+  --color-ring:      rgba(255,255,255,0.10);
+  --color-series-1: #3987e5; --color-series-2: #d95926; --color-series-3: #199e70;
+  --color-series-4: #c98500; --color-series-5: #d55181; --color-series-6: #008300;
+  --color-series-7: #9085e9; --color-series-8: #e66767;
+  --color-delta-up: #0ca30c;
+  --glass-tint-from: rgba(4,4,8,0.30);
+  --glass-tint-to:   rgba(4,4,8,0.46);
+}
+:root[data-theme="dark"] .viz-root { color-scheme: dark; --baseline: #383835; }
+
+/* status palette is fixed — never themed (dataviz rule). Do not redefine in dark. */
+
+body { background: var(--color-plane); color: var(--color-ink); }
+.tabnum { font-variant-numeric: tabular-nums; }

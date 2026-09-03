@@ -8,9 +8,12 @@ rationale) and [CLAUDE.md](CLAUDE.md) (the project brief).
 > `architecture.md` to be updated in the same change that adds/alters a file,
 > function, class, endpoint, table, or command.
 
-Last updated: 2026-08-28 — after CLAUDE.md Section 9 **step 2** (synthetic data
-generator) + switch to a local (non-Docker) PostgreSQL. Build status table at
-the bottom.
+Last updated: 2026-09-03 — added the `build-workflow` project skill (§3.1),
+which absorbs and replaces `razorpay-source-check` and adds a plan.md
+check-out/update step; no build-order step (tooling/process only). Prior:
+2026-08-28 — after CLAUDE.md
+Section 9 **step 2** (synthetic data generator) + switch to a local (non-Docker)
+PostgreSQL. Build status table at the bottom.
 
 ---
 
@@ -78,6 +81,8 @@ RAZORPAY BUILDATHON/
 | `docker-compose.yml` | **Inactive here** (Docker needs WSL2, not installed; Win 11 Home has no Hyper-V). Kept for machines where Docker works: service `db` = `postgres:16-alpine`, container `revrec_db`, creds `revrec`, port 5432, volume `revrec_pgdata`, healthcheck. |
 | `scripts/init-test-db.sql` | Only used by the Docker path — `CREATE DATABASE revrec_test`. `pg.ps1 install` does the same for the local path. |
 | `.gitignore` | Ignores `__pycache__`, `.venv`, `.pytest_cache`, `.env`, `node_modules`, `frontend/dist`, `**/data/synthetic_events.csv`. |
+| `.claude/skills/` | Claude Code project skills (dev tooling, not shipped): `build-workflow` (mandatory per-task workflow wrapper: check out/update plan.md → verify against Razorpay sources (link list + how-to embedded in its Step 1) → keep architecture.md diagrams current → documentation.md → history.md brief; absorbed the former `razorpay-source-check` skill), `scroll-craft` + `liquid-glass` (vendored UI skills), `glass-scroll-3d` (composite scroll+R3F+glass, for the welcome page), `revrec-dashboard` (dashboard UI: tokens + chart catalog + data-table/timeline components, combines dataviz + liquid-glass). |
+| `plan.md` | The project brief (formerly `CLAUDE.md`; renamed). `CLAUDE.md` is now a short operational guide pointing here. |
 
 ### 3.2 `backend/` — packaging & config
 
