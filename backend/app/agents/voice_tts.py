@@ -89,8 +89,13 @@ def synthesize_script(
         "audio_format": "wav",
         "sample_rate": s.sarvam_tts_sample_rate,
         "audio": [],
+        "reason": None,
     }
-    if not available(s) or not turns:
+    if not available(s):
+        result["reason"] = "no SARVAM_API_KEY configured"
+        return result
+    if not turns:
+        result["reason"] = "script has no dialogue turns"
         return result
 
     clips: list[dict[str, Any]] = []
@@ -102,7 +107,11 @@ def synthesize_script(
             clips.append(
                 {"index": i, "speaker": turn.get("speaker", "Agent"), "audio_base64": clip}
             )
-    except SarvamTTSError:
+    except SarvamTTSError as exc:
+        # Diagnosable from the API response instead of only a silent
+        # available=false -- a wrong speaker/model name for the configured
+        # provider still degrades gracefully, but now says why.
+        result["reason"] = str(exc)
         return result
 
     result["available"] = True

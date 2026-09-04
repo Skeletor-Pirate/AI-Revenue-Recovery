@@ -1,5 +1,5 @@
 {
-  "_note": "Regenerated from a real `uv run python -m app.pipeline` run (seed 42). Shapes match AGENTS_CONTRACT.md \u00a78/\u00a712. Money = decimal strings.",
+  "_note": "Regenerated from a real `uv run python -m app.pipeline` run (seed 42). Shapes match AGENTS_CONTRACT.md §8/§12. Money = decimal strings.",
   "events": {
     "count": 74,
     "events": [
@@ -17,7 +17,12 @@
         "status": "recovered",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "820.14"
+        "recovered_amount": "820.14",
+        "customer_name": "Dev Kumer",
+        "customer_phone": "+917711178002",
+        "customer_bank_account": "79725005540233",
+        "customer_upi_vpa": "devkumer@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_006",
@@ -33,7 +38,12 @@
         "status": "recovered",
         "root_cause": "auth_failure",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "905.78"
+        "recovered_amount": "905.78",
+        "customer_name": "Urmi Raghavan",
+        "customer_phone": "+918226614242",
+        "customer_bank_account": "39548467570198",
+        "customer_upi_vpa": "urmiraghavan@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_030",
@@ -49,7 +59,12 @@
         "status": "exception",
         "root_cause": "auth_failure",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Vinaya Balakrishnan",
+        "customer_phone": "+919607069464",
+        "customer_bank_account": "70904310473357",
+        "customer_upi_vpa": "vinayabalakr@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_027",
@@ -65,7 +80,12 @@
         "status": "recovered",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "1360.10"
+        "recovered_amount": "1360.10",
+        "customer_name": "Sanaya Lata",
+        "customer_phone": "+919946885253",
+        "customer_bank_account": "93194499049777",
+        "customer_upi_vpa": "sanayalata@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_048",
@@ -81,7 +101,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Eesha Balasubramanian",
+        "customer_phone": "+916623832096",
+        "customer_bank_account": "13577803630307",
+        "customer_upi_vpa": "eeshabalasub@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_051",
@@ -97,7 +122,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "4325.30"
+        "recovered_amount": "4325.30",
+        "customer_name": "Lakshmi Kalita",
+        "customer_phone": "+919564680097",
+        "customer_bank_account": "69407854668866",
+        "customer_upi_vpa": "lakshmikalit@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_062",
@@ -113,7 +143,12 @@
         "status": "exception",
         "root_cause": "auth_failure",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Tristan Sarma",
+        "customer_phone": "+916847144854",
+        "customer_bank_account": "79780072382447",
+        "customer_upi_vpa": "tristansarma@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_041",
@@ -129,7 +164,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "1831.58"
+        "recovered_amount": "1831.58",
+        "customer_name": "Hemani Kashyap",
+        "customer_phone": "+918874747711",
+        "customer_bank_account": "40793527587389",
+        "customer_upi_vpa": "hemanikashya@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_061",
@@ -145,7 +185,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Bimala Bains",
+        "customer_phone": "+916440837476",
+        "customer_bank_account": "88314074056944",
+        "customer_upi_vpa": "bimalabains@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_047",
@@ -161,7 +206,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Quincy Minhas",
+        "customer_phone": "+916127322286",
+        "customer_bank_account": "80483467872759",
+        "customer_upi_vpa": "quincyminhas@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_029",
@@ -177,7 +227,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "1426.19"
+        "recovered_amount": "1426.19",
+        "customer_name": "Yashica Gupta",
+        "customer_phone": "+916509314931",
+        "customer_bank_account": "49991743450909",
+        "customer_upi_vpa": "yashicagupta@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_056",
@@ -193,7 +248,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Yashasvi Ramaswamy",
+        "customer_phone": "+917553244221",
+        "customer_bank_account": "77585753657175",
+        "customer_upi_vpa": "yashasvirama@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_039",
@@ -209,7 +269,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "1287.97"
+        "recovered_amount": "1287.97",
+        "customer_name": "Netra Sachdeva",
+        "customer_phone": "+916666537775",
+        "customer_bank_account": "34351024652719",
+        "customer_upi_vpa": "netrasachdev@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_057",
@@ -225,7 +290,12 @@
         "status": "exception",
         "root_cause": "bank_downtime",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Kavya Chadha",
+        "customer_phone": "+919632374341",
+        "customer_bank_account": "25189188033813",
+        "customer_upi_vpa": "kavyachadha@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_001",
@@ -241,7 +311,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Maya Prabhakar",
+        "customer_phone": "+917471192992",
+        "customer_bank_account": "76048134101382",
+        "customer_upi_vpa": "mayaprabhaka@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_020",
@@ -257,7 +332,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "1831.50"
+        "recovered_amount": "1831.50",
+        "customer_name": "Darika Ramesh",
+        "customer_phone": "+917917061414",
+        "customer_bank_account": "33977286960856",
+        "customer_upi_vpa": "darikaramesh@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_000",
@@ -273,7 +353,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Yadavi Karan",
+        "customer_phone": "+918123074397",
+        "customer_bank_account": "11735089807355",
+        "customer_upi_vpa": "yadavikaran@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_008",
@@ -289,7 +374,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "2004.77"
+        "recovered_amount": "2004.77",
+        "customer_name": "Vincent Ravel",
+        "customer_phone": "+916299615329",
+        "customer_bank_account": "58389308189225",
+        "customer_upi_vpa": "vincentravel@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_005",
@@ -305,7 +395,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "9264.20"
+        "recovered_amount": "9264.20",
+        "customer_name": "Tripti Luthra",
+        "customer_phone": "+918229804604",
+        "customer_bank_account": "87123264073026",
+        "customer_upi_vpa": "triptiluthra@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_037",
@@ -321,7 +416,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "1078.82"
+        "recovered_amount": "1078.82",
+        "customer_name": "Leela Vala",
+        "customer_phone": "+918874687978",
+        "customer_bank_account": "28192661727976",
+        "customer_upi_vpa": "leelavala@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_066",
@@ -337,7 +437,12 @@
         "status": "exception",
         "root_cause": "card_declined",
         "diagnosis_confidence": 0.8,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Pooja Bhalla",
+        "customer_phone": "+919645157245",
+        "customer_bank_account": "90218670716780",
+        "customer_upi_vpa": "poojabhalla@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_016",
@@ -353,7 +458,12 @@
         "status": "recovered",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "1120.21"
+        "recovered_amount": "1120.21",
+        "customer_name": "Yamini Sachdev",
+        "customer_phone": "+917425739463",
+        "customer_bank_account": "68322893313603",
+        "customer_upi_vpa": "yaminisachde@oksbi",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_023",
@@ -369,7 +479,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Aarav Yohannan",
+        "customer_phone": "+919642544369",
+        "customer_bank_account": "97748501610174",
+        "customer_upi_vpa": "aaravyohanna@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_007",
@@ -385,7 +500,12 @@
         "status": "recovered",
         "root_cause": "auth_failure",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "1060.38"
+        "recovered_amount": "1060.38",
+        "customer_name": "Tara Bala",
+        "customer_phone": "+916615639791",
+        "customer_bank_account": "42314494567428",
+        "customer_upi_vpa": "tarabala@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_060",
@@ -401,7 +521,12 @@
         "status": "exception",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Pratyush Chand",
+        "customer_phone": "+919544866269",
+        "customer_bank_account": "87553358765719",
+        "customer_upi_vpa": "pratyushchan@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_069",
@@ -417,7 +542,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Bachittar Bobal",
+        "customer_phone": "+917494196212",
+        "customer_bank_account": "73750271260246",
+        "customer_upi_vpa": "bachittarbob@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_067",
@@ -433,7 +563,12 @@
         "status": "exception",
         "root_cause": "auth_failure",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Avni Krish",
+        "customer_phone": "+918192843870",
+        "customer_bank_account": "25407201498230",
+        "customer_upi_vpa": "avnikrish@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_036",
@@ -449,7 +584,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Hemangini Mannan",
+        "customer_phone": "+916935846392",
+        "customer_bank_account": "33566784119432",
+        "customer_upi_vpa": "hemanginiman@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_043",
@@ -465,7 +605,12 @@
         "status": "exception",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Aadhya Wable",
+        "customer_phone": "+919497845686",
+        "customer_bank_account": "33665063460658",
+        "customer_upi_vpa": "aadhyawable@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_044",
@@ -481,7 +626,12 @@
         "status": "recovered",
         "root_cause": "bank_downtime",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "2503.80"
+        "recovered_amount": "2503.80",
+        "customer_name": "Chaitaly Sha",
+        "customer_phone": "+916603928666",
+        "customer_bank_account": "55319217693860",
+        "customer_upi_vpa": "chaitalysha@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_019",
@@ -497,7 +647,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Urvi Comar",
+        "customer_phone": "+918855250767",
+        "customer_bank_account": "53907552176739",
+        "customer_upi_vpa": "urvicomar@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_011",
@@ -513,7 +668,12 @@
         "status": "recovered",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "8630.09"
+        "recovered_amount": "8630.09",
+        "customer_name": "Hemal Sama",
+        "customer_phone": "+919794878646",
+        "customer_bank_account": "36464713176544",
+        "customer_upi_vpa": "hemalsama@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_054",
@@ -529,7 +689,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Ikbal Kulkarni",
+        "customer_phone": "+917639274549",
+        "customer_bank_account": "70750618675734",
+        "customer_upi_vpa": "ikbalkulkarn@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_035",
@@ -545,7 +710,12 @@
         "status": "recovered",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "200.00"
+        "recovered_amount": "200.00",
+        "customer_name": "Umang Badami",
+        "customer_phone": "+916927342927",
+        "customer_bank_account": "30613254510029",
+        "customer_upi_vpa": "umangbadami@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_058",
@@ -561,7 +731,12 @@
         "status": "recovered",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "2227.74"
+        "recovered_amount": "2227.74",
+        "customer_name": "Naveen Sehgal",
+        "customer_phone": "+917534280104",
+        "customer_bank_account": "81256533698764",
+        "customer_upi_vpa": "naveensehgal@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_065",
@@ -577,7 +752,12 @@
         "status": "exception",
         "root_cause": "card_declined",
         "diagnosis_confidence": 0.8,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Thomas Varty",
+        "customer_phone": "+918720402451",
+        "customer_bank_account": "41411032200314",
+        "customer_upi_vpa": "thomasvarty@oksbi",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_040",
@@ -593,7 +773,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Megha Nagi",
+        "customer_phone": "+919389136634",
+        "customer_bank_account": "98796987799543",
+        "customer_upi_vpa": "meghanagi@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_034",
@@ -609,7 +794,12 @@
         "status": "exception",
         "root_cause": "insufficient_funds",
         "diagnosis_confidence": 0.95,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Daniel Misra",
+        "customer_phone": "+916511983601",
+        "customer_bank_account": "53117380438531",
+        "customer_upi_vpa": "danielmisra@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_012",
@@ -625,7 +815,12 @@
         "status": "recovered",
         "root_cause": "auth_failure",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "677.34"
+        "recovered_amount": "677.34",
+        "customer_name": "Faraj Mukherjee",
+        "customer_phone": "+917656926566",
+        "customer_bank_account": "68571148511120",
+        "customer_upi_vpa": "farajmukherj@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_024",
@@ -641,7 +836,12 @@
         "status": "exception",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Kalpit Anand",
+        "customer_phone": "+917557511382",
+        "customer_bank_account": "15338002365847",
+        "customer_upi_vpa": "kalpitanand@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_002",
@@ -657,7 +857,12 @@
         "status": "recovered",
         "root_cause": "bank_downtime",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "7818.30"
+        "recovered_amount": "7818.30",
+        "customer_name": "Triveni Garg",
+        "customer_phone": "+919491632347",
+        "customer_bank_account": "81616960298415",
+        "customer_upi_vpa": "trivenigarg@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_022",
@@ -673,7 +878,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Kritika Iyer",
+        "customer_phone": "+917641939476",
+        "customer_bank_account": "23934363965044",
+        "customer_upi_vpa": "kritikaiyer@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_042",
@@ -689,7 +899,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Rachita Hari",
+        "customer_phone": "+919973329535",
+        "customer_bank_account": "24695197749997",
+        "customer_upi_vpa": "rachitahari@oksbi",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_033",
@@ -705,7 +920,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Chaman Thaman",
+        "customer_phone": "+919471598338",
+        "customer_bank_account": "12420213211969",
+        "customer_upi_vpa": "chamanthaman@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_064",
@@ -721,7 +941,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Neelima Manda",
+        "customer_phone": "+918591931376",
+        "customer_bank_account": "32089094512100",
+        "customer_upi_vpa": "neelimamanda@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_038",
@@ -737,7 +962,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Falak Deshmukh",
+        "customer_phone": "+916963899905",
+        "customer_bank_account": "70410171422956",
+        "customer_upi_vpa": "falakdeshmuk@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_017",
@@ -753,7 +983,12 @@
         "status": "exception",
         "root_cause": "card_declined",
         "diagnosis_confidence": 0.8,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Amaira Char",
+        "customer_phone": "+917691370036",
+        "customer_bank_account": "63372861518806",
+        "customer_upi_vpa": "amairachar@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_018",
@@ -769,7 +1004,12 @@
         "status": "recovered",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "2153.07"
+        "recovered_amount": "2153.07",
+        "customer_name": "Vedhika Walia",
+        "customer_phone": "+917198356259",
+        "customer_bank_account": "19192237786441",
+        "customer_upi_vpa": "vedhikawalia@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_003",
@@ -785,7 +1025,12 @@
         "status": "exception",
         "root_cause": "auth_failure",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Frado Deol",
+        "customer_phone": "+918134852725",
+        "customer_bank_account": "33438365365059",
+        "customer_upi_vpa": "fradodeol@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_021",
@@ -801,7 +1046,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Amrita Natarajan",
+        "customer_phone": "+916189371972",
+        "customer_bank_account": "81195955775780",
+        "customer_upi_vpa": "amritanatara@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_068",
@@ -817,7 +1067,12 @@
         "status": "exception",
         "root_cause": "bank_downtime",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Jhalak Nigam",
+        "customer_phone": "+919115633654",
+        "customer_bank_account": "26030279462638",
+        "customer_upi_vpa": "jhalaknigam@oksbi",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_052",
@@ -833,7 +1088,12 @@
         "status": "exception",
         "root_cause": "bank_downtime",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Wahab Suresh",
+        "customer_phone": "+917388451869",
+        "customer_bank_account": "91622139799743",
+        "customer_upi_vpa": "wahabsuresh@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "fraud_03",
@@ -849,7 +1109,12 @@
         "status": "flagged",
         "root_cause": "suspected_fraud",
         "diagnosis_confidence": null,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Ekani Baral",
+        "customer_phone": "+917469821234",
+        "customer_bank_account": "20301077904902",
+        "customer_upi_vpa": "ekanibaral@oksbi",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "fraud_01",
@@ -865,7 +1130,12 @@
         "status": "flagged",
         "root_cause": "suspected_fraud",
         "diagnosis_confidence": null,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Manan Dass",
+        "customer_phone": "+916279819878",
+        "customer_bank_account": "26141951241829",
+        "customer_upi_vpa": "manandass@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "fraud_02",
@@ -881,7 +1151,12 @@
         "status": "flagged",
         "root_cause": "suspected_fraud",
         "diagnosis_confidence": null,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Faraj Kapur",
+        "customer_phone": "+918666270385",
+        "customer_bank_account": "21504353226370",
+        "customer_upi_vpa": "farajkapur@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "fraud_00",
@@ -897,7 +1172,12 @@
         "status": "flagged",
         "root_cause": "suspected_fraud",
         "diagnosis_confidence": null,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Janya Merchant",
+        "customer_phone": "+918796002456",
+        "customer_bank_account": "85194416731753",
+        "customer_upi_vpa": "janyamerchan@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_014",
@@ -913,7 +1193,12 @@
         "status": "recovered",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "1438.94"
+        "recovered_amount": "1438.94",
+        "customer_name": "Tanvi Malhotra",
+        "customer_phone": "+918588232158",
+        "customer_bank_account": "11740731939676",
+        "customer_upi_vpa": "tanvimalhotr@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_010",
@@ -929,7 +1214,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Gavin Sachdev",
+        "customer_phone": "+918633106007",
+        "customer_bank_account": "36444285541248",
+        "customer_upi_vpa": "gavinsachdev@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_059",
@@ -945,7 +1235,12 @@
         "status": "exception",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Oviya Edwin",
+        "customer_phone": "+916125377432",
+        "customer_bank_account": "73458638117019",
+        "customer_upi_vpa": "oviyaedwin@oksbi",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_004",
@@ -961,7 +1256,12 @@
         "status": "exception",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Wyatt Dutt",
+        "customer_phone": "+919468661171",
+        "customer_bank_account": "71233790408373",
+        "customer_upi_vpa": "wyattdutt@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_049",
@@ -977,7 +1277,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Chaitaly Kulkarni",
+        "customer_phone": "+917377477256",
+        "customer_bank_account": "77133395182222",
+        "customer_upi_vpa": "chaitalykulk@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_026",
@@ -993,7 +1298,12 @@
         "status": "recovered",
         "root_cause": "auth_failure",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "1911.11"
+        "recovered_amount": "1911.11",
+        "customer_name": "Harish Johal",
+        "customer_phone": "+918883994985",
+        "customer_bank_account": "54674755379999",
+        "customer_upi_vpa": "harishjohal@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_063",
@@ -1009,7 +1319,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Avi Anne",
+        "customer_phone": "+917750310277",
+        "customer_bank_account": "51596438731979",
+        "customer_upi_vpa": "avianne@paytm",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_032",
@@ -1025,7 +1340,12 @@
         "status": "recovered",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "200.00"
+        "recovered_amount": "200.00",
+        "customer_name": "Shivani Raman",
+        "customer_phone": "+916341993509",
+        "customer_bank_account": "66089323449528",
+        "customer_upi_vpa": "shivaniraman@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_025",
@@ -1041,7 +1361,12 @@
         "status": "exception",
         "root_cause": "insufficient_funds",
         "diagnosis_confidence": 0.95,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Devansh Nadig",
+        "customer_phone": "+919257262101",
+        "customer_bank_account": "94649380785881",
+        "customer_upi_vpa": "devanshnadig@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_031",
@@ -1057,7 +1382,12 @@
         "status": "recovered",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "3120.59"
+        "recovered_amount": "3120.59",
+        "customer_name": "Isaac Krishna",
+        "customer_phone": "+917578532923",
+        "customer_bank_account": "75995128255748",
+        "customer_upi_vpa": "isaackrishna@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_055",
@@ -1073,7 +1403,12 @@
         "status": "recovered",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "2111.46"
+        "recovered_amount": "2111.46",
+        "customer_name": "Aashi Goswami",
+        "customer_phone": "+919684869491",
+        "customer_bank_account": "39251053449781",
+        "customer_upi_vpa": "aashigoswami@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_053",
@@ -1089,7 +1424,12 @@
         "status": "recovered",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "9172.32"
+        "recovered_amount": "9172.32",
+        "customer_name": "Rushil Koshy",
+        "customer_phone": "+919339654640",
+        "customer_bank_account": "21451930990459",
+        "customer_upi_vpa": "rushilkoshy@ibl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_050",
@@ -1105,7 +1445,12 @@
         "status": "recovered",
         "root_cause": "card_declined",
         "diagnosis_confidence": 0.8,
-        "recovered_amount": "631.94"
+        "recovered_amount": "631.94",
+        "customer_name": "Gaurav Sem",
+        "customer_phone": "+916524018511",
+        "customer_bank_account": "64955083340553",
+        "customer_upi_vpa": "gauravsem@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_015",
@@ -1121,7 +1466,12 @@
         "status": "recovered",
         "root_cause": "bank_downtime",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "4772.80"
+        "recovered_amount": "4772.80",
+        "customer_name": "Benjamin Narang",
+        "customer_phone": "+918808480509",
+        "customer_bank_account": "54573972952978",
+        "customer_upi_vpa": "benjaminnara@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_046",
@@ -1137,7 +1487,12 @@
         "status": "recovered",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "1006.93"
+        "recovered_amount": "1006.93",
+        "customer_name": "Yatan Natt",
+        "customer_phone": "+919163120034",
+        "customer_bank_account": "86592585356291",
+        "customer_upi_vpa": "yatannatt@axl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_028",
@@ -1153,7 +1508,12 @@
         "status": "exception",
         "root_cause": "checkout_abandoned",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Yash Kannan",
+        "customer_phone": "+918234951434",
+        "customer_bank_account": "66544291390060",
+        "customer_upi_vpa": "yashkannan@ybl",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_009",
@@ -1169,7 +1529,12 @@
         "status": "recovered",
         "root_cause": "invoice_forgotten",
         "diagnosis_confidence": 0.85,
-        "recovered_amount": "2664.79"
+        "recovered_amount": "2664.79",
+        "customer_name": "Amrita Bobal",
+        "customer_phone": "+916428980133",
+        "customer_bank_account": "20573046273617",
+        "customer_upi_vpa": "amritabobal@okhdfcbank",
+        "human_recovered_amount": "0.00"
       },
       {
         "event_id": "evt_013",
@@ -1185,7 +1550,12 @@
         "status": "exception",
         "root_cause": "expired_instrument",
         "diagnosis_confidence": 0.9,
-        "recovered_amount": "0.00"
+        "recovered_amount": "0.00",
+        "customer_name": "Advaith Mannan",
+        "customer_phone": "+916433250405",
+        "customer_bank_account": "79421099120461",
+        "customer_upi_vpa": "advaithmanna@oksbi",
+        "human_recovered_amount": "0.00"
       }
     ]
   },
@@ -1204,7 +1574,12 @@
       "status": "recovered",
       "root_cause": "auth_failure",
       "diagnosis_confidence": 0.9,
-      "recovered_amount": "905.78"
+      "recovered_amount": "905.78",
+      "customer_name": "Mitesh Chaudhuri",
+      "customer_phone": "+917546861563",
+      "customer_bank_account": "56174312860118",
+      "customer_upi_vpa": "miteshchaudh@ibl",
+      "human_recovered_amount": "0.00"
     },
     "trail": [
       {
@@ -1742,7 +2117,7 @@
           "fraud_02",
           "fraud_00"
         ],
-        "reason": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54\u20135003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery."
+        "reason": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54–5003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery."
       }
     }
   },
@@ -2165,7 +2540,7 @@
         "fraud_02",
         "fraud_00"
       ],
-      "reason": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54\u20135003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery."
+      "reason": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54–5003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery."
     },
     "ai_recovered": "72465.19",
     "human_recovered": "7092.97",
@@ -2198,7 +2573,7 @@
         "reason": "suspected_fraud",
         "priority": 91,
         "status": "open",
-        "summary": "failed payment of Rs 5003.06 halted as part of a matching-signature cluster. Recovery refused to act \u2014 confirm genuine or abuse before anything else.",
+        "summary": "failed payment of Rs 5003.06 halted as part of a matching-signature cluster. Recovery refused to act — confirm genuine or abuse before anything else.",
         "detail": null,
         "assigned_employee_email": null,
         "assigned_at": null,
@@ -2230,7 +2605,7 @@
         "reason": "awaiting_approval",
         "priority": 76,
         "status": "resolved",
-        "summary": "invoice escalation to stage 2 (formal_notice) on Rs 7092.97 is above the human-approval gate. Not executed \u2014 needs your sign-off.",
+        "summary": "invoice escalation to stage 2 (formal_notice) on Rs 7092.97 is above the human-approval gate. Not executed — needs your sign-off.",
         "detail": null,
         "assigned_employee_email": "asha@acme.com",
         "assigned_at": "2026-09-04T14:29:06.596195Z",
@@ -2300,7 +2675,7 @@
       "reason": "suspected_fraud",
       "priority": 91,
       "status": "open",
-      "summary": "failed payment of Rs 5003.06 halted as part of a matching-signature cluster. Recovery refused to act \u2014 confirm genuine or abuse before anything else.",
+      "summary": "failed payment of Rs 5003.06 halted as part of a matching-signature cluster. Recovery refused to act — confirm genuine or abuse before anything else.",
       "detail": null,
       "assigned_employee_email": null,
       "assigned_at": null,
@@ -2328,7 +2703,11 @@
       "human_recovered_amount": "0.00",
       "promised_date": null,
       "ptp_status": "none",
-      "retry_schedule": null
+      "retry_schedule": null,
+      "customer_name": "Yashodhara Ghose",
+      "customer_phone": "+918240006408",
+      "customer_bank_account": "55006384817752",
+      "customer_upi_vpa": "yashodharagh@okhdfcbank"
     },
     "trail": [
       {
@@ -2348,7 +2727,7 @@
         "event_id": "fraud_03",
         "agent": "triage",
         "action": "halted_fraud_cluster",
-        "reasoning": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54\u20135003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery.",
+        "reasoning": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54–5003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery.",
         "payload": {
           "signature": {
             "amount_band": [

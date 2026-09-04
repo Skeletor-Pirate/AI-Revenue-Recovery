@@ -8,11 +8,16 @@
 | GET    | /api/tickets/{id}           | {ticket, event, trail}                |
 | POST   | /api/tickets/{id}/assign    | {status: "ok", ticket: TicketRead}    |
 | POST   | /api/tickets/{id}/resolve   | {status: "ok", ticket: TicketRead}    |
+| POST   | /api/events/{id}/playground/start   | {channel, ticket_ref, persona, opening_turn, outcome, history} |
+| POST   | /api/events/{id}/playground/message | {turn, outcome, reasoning, history}   |
+| POST   | /api/events/{id}/playground/advance | {customer_turn, agent_turn, outcome, reasoning, history} |
 | POST   | /api/pipeline/run           | {metrics: MetricsBlock, ran_at: str}  |
 | GET    | /api/metrics                | MetricsBlock                          |
 
 All persistence via ``app.db.store``; metrics via ``app.agents.audit``; the
-human review queue via ``app.agents.triage``.
+human review queue via ``app.agents.triage``. The Playground endpoints are a
+sandboxed rehearsal (``app.agents.playground``) — they read an event for
+context but never write to the store or affect ``MetricsBlock``.
 """
 
 from __future__ import annotations
@@ -25,7 +30,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app import rag
-from app.agents import audit, ptp, sequencer, triage, voice, voice_tts
+from app.agents import audit, playground, ptp, sequencer, triage, voice, voice_tts
 from app.config import get_settings
 from app.data import generate
 from app.db import store
@@ -58,6 +63,24 @@ class RaiseQuestionRequest(BaseModel):
     question: str = Field(description="The customer's question, verbatim")
     channel: str = Field(default="voice_call", description="voice_call | whatsapp_message | email | dashboard")
     employee_email: str | None = Field(default=None, description="Who escalated it, if known")
+
+
+class PlaygroundStartRequest(BaseModel):
+    mode: str = Field(
+        default="interactive",
+        description="'interactive' (you play the customer/business) or 'auto' (watch two AIs talk)",
+    )
+
+
+class PlaygroundMessageRequest(BaseModel):
+    history: list[dict[str, str]] = Field(description="Transcript so far, [{speaker, text}, ...]")
+    message: str = Field(description="The tester's line, played as the customer/business")
+    channel: str = Field(default="call", description="'call' or 'message'")
+
+
+class PlaygroundAdvanceRequest(BaseModel):
+    history: list[dict[str, str]] = Field(description="Transcript so far, [{speaker, text}, ...]")
+    channel: str = Field(default="call", description="'call' or 'message'")
 
 
 @router.get("/events")
@@ -121,6 +144,48 @@ def event_voice_audio(event_id: str) -> dict[str, Any]:
         script = voice.generate_hinglish_voice_script(event, settings=settings)
     tts = voice_tts.synthesize_script(script, settings=settings)
     return {"event_id": event_id, **tts}
+
+
+# --- Simulate / Playground (app/agents/playground.py) ----------------------
+# A sandboxed rehearsal: reads the real event for context but never writes to
+# the store. Nothing here should ever call insert_ticket / update_event /
+# log_action -- see playground.py's module docstring and plan.md §12.
+
+@router.post("/events/{event_id}/playground/start")
+def playground_start(event_id: str, body: PlaygroundStartRequest) -> dict[str, Any]:
+    """Open a rehearsal session for this case. Writes nothing to the store."""
+    mode = body.mode if body.mode in ("interactive", "auto") else "interactive"
+    with store.get_session() as session:
+        event = store.get_event(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        return playground.start_session(event, mode=mode, settings=get_settings())
+
+
+@router.post("/events/{event_id}/playground/message")
+def playground_message(event_id: str, body: PlaygroundMessageRequest) -> dict[str, Any]:
+    """Interactive mode: the tester's line (as the customer/business), then
+    one Agent reply."""
+    with store.get_session() as session:
+        event = store.get_event(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        return playground.send_message(
+            event, body.history, body.message, body.channel, settings=get_settings()
+        )
+
+
+@router.post("/events/{event_id}/playground/advance")
+def playground_advance(event_id: str, body: PlaygroundAdvanceRequest) -> dict[str, Any]:
+    """Auto mode: one Customer/Business turn, then one Agent reply — two
+    distinctly-prompted LLM calls."""
+    with store.get_session() as session:
+        event = store.get_event(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        return playground.advance_conversation(
+            event, body.history, body.channel, settings=get_settings()
+        )
 
 
 @router.get("/events/{event_id}/sequencer")

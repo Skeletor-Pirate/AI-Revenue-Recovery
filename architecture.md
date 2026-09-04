@@ -8,14 +8,19 @@ Diagrams and design rationale. Companion to
 > the same change that alters the architecture, data model, agent flow, or
 > runtime topology.
 
-Last updated: 2026-09-04 — **Urgent human attention**: a `tickets` table +
+Last updated: 2026-09-04 — **Simulate / Playground + Sarvam TTS fix + synthetic
+contact data**: `app/agents/playground.py` (stateless sandboxed rehearsal agent,
+two LLM personas), 3 new API routes (`POST /events/{id}/playground/start|message|advance`),
+frontend `SimulateSession.tsx` + `Playground.tsx`, `chat_turns()` in `llm.py`;
+synthetic contact fields (`customer_name/phone/bank_account/upi_vpa`) on `Event`;
+fixed Sarvam TTS root cause (`VITE_DATA_SOURCE` was missing from `frontend/.env`).
+New §6.2 Simulate sequence; §4 ERD + §7 component table + §8 design log updated.
+Prior: 2026-09-04 — **Urgent human attention**: a `tickets` table +
 Triage agent (`app/agents/triage.py`) between Recovery and Audit, a
 priority-ordered review queue with a take → record-what-you-did → resolved /
 unresolved lifecycle, `agent="human"` audit rows, and AI-vs-human recovered-money
 attribution (`Event.human_recovered_amount`). New §5.1 (ticket lifecycle) and
-§6.1 (a human working the queue); §2 / §4 / §5 / §7 / §8 updated. Turns plan.md
-§6's audit-log-only human-approval flag into the real workflow it says to build
-when not short on time.
+§6.1 (a human working the queue); §2 / §4 / §5 / §7 / §8 updated.
 Prior: 2026-09-04 — Direction 6 spoken playback: Sarvam AI (`bulbul`) neural
 TTS for the Hinglish Voice Recovery Agent (`app/agents/voice_tts.py`, `GET
 /api/events/{id}/voice/audio`); `VoiceCallDrawer` plays per-turn Sarvam WAV clips
@@ -193,6 +198,10 @@ erDiagram
         text        customer_id
         numeric     amount "14,2 — money at risk"
         text        currency "default INR"
+        text        customer_name "nullable — synthetic full name (Faker)"
+        text        customer_phone "nullable — synthetic +91 mobile"
+        text        customer_bank_account "nullable — synthetic account number"
+        text        customer_upi_vpa "nullable — synthetic VPA e.g. name@okhdfcbank"
         text        raw_failure_reason "nullable — gateway words pre-diagnosis"
         int         attempts_so_far "stopping-rule counter"
         int         days_overdue "B2B invoices"
@@ -369,6 +378,61 @@ sequenceDiagram
     API-->>UI: total_recovered = ai_recovered + human_recovered
 ```
 
+### 6.2 A Simulate / Playground session (sandboxed rehearsal)
+
+```mermaid
+sequenceDiagram
+    actor T as Tester (judge / dev)
+    participant UI as SimulateSession.tsx
+    participant API as FastAPI
+    participant PG as playground.py
+    participant LLM as LLM (app/llm.py)
+    participant ST as store.py / DB
+
+    Note over T,ST: Mode = interactive (tester plays the customer)
+
+    T->>UI: click "⚡ Simulate" on a case
+    UI->>API: POST /api/events/{id}/playground/start {mode: "interactive"}
+    API->>PG: start_session(event, mode, settings)
+    PG->>ST: get_event() — read only
+    opt LLM configured
+        PG->>LLM: chat(agent_system_prompt, opening_instruction)
+    end
+    PG-->>API: {channel, ticket_ref, persona, opening_turn, history}
+    API-->>UI: session — tester sees agent opening line
+
+    loop until outcome ≠ ongoing
+        T->>UI: type a reply (as the customer)
+        UI->>API: POST /api/events/{id}/playground/message {history, message, channel}
+        API->>PG: send_message(event, history, message, channel, settings)
+        opt LLM configured
+            PG->>LLM: chat_turns(agent_system_prompt, turns_from_agent_pov)
+        end
+        PG-->>API: {turn, outcome, reasoning, history}
+        API-->>UI: agent reply + updated history
+    end
+
+    Note over T,ST: Mode = auto (watch two AIs talk)
+
+    T->>UI: select auto mode + click Advance
+    UI->>API: POST /api/events/{id}/playground/advance {history, channel}
+    API->>PG: advance_conversation(event, history, channel, settings)
+    opt LLM configured
+        PG->>LLM: chat_turns(customer_system_prompt, turns_from_customer_pov)
+        PG->>LLM: chat_turns(agent_system_prompt, turns_from_agent_pov)
+    end
+    PG-->>API: {customer_turn, agent_turn, outcome, reasoning, history}
+    API-->>UI: both turns — UI plays them, loops until resolved/escalated/halted
+
+    Note over T,ST: DB row counts and MetricsBlock UNCHANGED throughout
+    Note over PG,ST: playground.py never calls insert_ticket / update_event / log_action
+```
+
+The Playground is **explicitly excluded from `MetricsBlock`**: it calls no store
+write functions. The `history` list lives in the browser and is resent with every
+request — the backend is completely stateless for Simulate sessions. A judge
+playing *"yes I'll pay"* cannot move real recovery metrics.
+
 ---
 
 ## 7. Component responsibilities
@@ -385,6 +449,7 @@ sequenceDiagram
 | Mandate Retry Sequencer | `app/agents/sequencer.py` ✅ | intelligent multi-step mandate & subscription retry schedule (Direction 5) | rail-aware (UPI AutoPay / e-NACH / Card Token), calendar & salary cycle optimized, NPCI 3-attempt limit |
 | Hinglish Voice Recovery | `app/agents/voice.py` ✅ | conversational multi-turn phone call scripts & WhatsApp copy in natural Hinglish (Direction 6) | natural code-switching, empathetic tone, offline deterministic fallback scripts |
 | Hinglish Voice TTS | `app/agents/voice_tts.py` ✅ | synthesize each dialogue turn via Sarvam AI `bulbul` (agent vs customer speaker), return base64 WAV clips | optional (needs `SARVAM_API_KEY`); never raises — degrades to `available:false` so the dashboard uses the browser voice |
+| Simulate / Playground | `app/agents/playground.py` ✅ | stateless sandboxed rehearsal of a recovery outreach: two independently-prompted LLM personas (Resolver + Customer/Business) converse turn-by-turn via `chat_turns`; `interactive` mode (tester plays the customer) or `auto` mode (two AIs talk). Never writes to the store — the core safety property | read-only against the store; deterministic offline fallback so it runs without an LLM key; `pick_channel`, `build_persona`, `start_session`, `send_message`, `advance_conversation` are the public API; Sarvam TTS optional per turn |
 | Triage Agent | `app/agents/triage.py` ✅ | open one priority-scored review ticket per case the automation could not finish; carry the three human actions (take / resolve / raise a customer question) | idempotent — never duplicates or reopens a closed ticket; every human action writes an `agent="human"` audit row; resolution money bounded by what is still at risk |
 | Promise-to-Pay (PTP) Tracker | `app/agents/ptp.py` ✅ | commitment state machine: pause escalation, track honor/breakage, metrics (Direction 7) | pauses automated contact during commitment window; records fulfillment & breakage to audit trail |
 | Audit / Reporting | `app/agents/audit.py` ✅ | `compute_metrics` rolls `audit_log` + `events` into the MetricsBlock; `run` writes one `batch_metrics` row | computed over the full batch; exception list complete, never hidden; includes PTP metrics |
@@ -431,6 +496,10 @@ sequenceDiagram
 | Human override of a terminal state | only via `resolve_ticket` with money that is bounded by what is still at risk | the lifecycle is forward-only for *agents*; a person may finish a case the automation gave up on, but only with a note, an identity, and an amount that cannot exceed the exposure |
 | Reviewer identity | work email in `localStorage`, stamped on every action; no auth | the dashboard is an internal test-mode tool. The requirement is **attribution in the audit trail**, not access control — real deployment puts SSO in front. Pretending otherwise would be security theatre |
 | Fixture-mode tickets are sticky | in-memory array in `dataSource.ts`, unlike the read-only event fixtures | the review flow is a *sequence* (take, then resolve). A demo where step one silently reverts would misrepresent how the feature behaves against the live API |
+| Sarvam TTS root-cause fix (2026-09-04) | root cause was `frontend/.env` missing → `VITE_DATA_SOURCE` defaulted to `"fixtures"`, which never calls the backend and so never calls Sarvam | fixed by creating `frontend/.env` with `VITE_DATA_SOURCE=live`; no backend change required. Added a startup log line in `main.py` and a `reason` field to `voice_tts.synthesize_script`'s return dict for diagnosability. **Gotcha:** `get_settings()` is `@lru_cache`d — restart the backend process after any `.env` edit |
+| `voice.py` prerecorded vs Simulate live (2026-09-04) | `app/agents/voice.py` is a **one-shot script** (one LLM call writes the entire dialogue up front, deterministic for a given case); `app/agents/playground.py` is **live, turn-by-turn** (two independently-prompted `chat_turns()` calls react to the real transcript so far) | the prerecorded transcript is correct for the dashboard "play back what the agent would say" UX — always the same, deterministic. Simulate is for a judge who wants to actually interact and see how the AI responds. Mixing the two models would break both use cases |
+| Simulate sandboxing guarantee (2026-09-04) | `app/agents/playground.py` never calls `insert_ticket`, `update_event`, or `log_action`; the history list lives in the browser (resent each call); the backend is stateless per session | a judge playing "yes I'll pay" must never move the real `events`/`tickets` tables or the batch's `MetricsBlock`. Verified in `test_playground.py` with DB row-count before/after snapshots AND in `test_api.py` at the HTTP level |
+| Synthetic customer contact data (2026-09-04) | `customer_name`, `customer_phone`, `customer_bank_account`, `customer_upi_vpa` added to `Event` / `EventCreate` / `EventRead`; generated via `_fake_contact()` in `generate.py` using Faker | Razorpay's test-mode docs have no customer/contact simulator (verified against the test-card/UPI docs); these fields exist so a case reads like a real record and the Playground has a persona to role-play against. Phone/bank-account shown **masked** in `DetailDrawer`. Never real PII |
 
 ---
 

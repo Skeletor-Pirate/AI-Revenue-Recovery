@@ -11,6 +11,11 @@ import type {
   TicketDetailResponse,
   TicketMutationResponse,
   TicketsResponse,
+  PlaygroundAdvanceResponse,
+  PlaygroundMessageResponse,
+  PlaygroundMode,
+  PlaygroundStartResponse,
+  PlaygroundTurn,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -77,6 +82,28 @@ export const api = {
     request<TicketMutationResponse>(
       `/api/events/${encodeURIComponent(eventId)}/raise-question`,
       { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  // --- Simulate / Playground (sandboxed rehearsal) ---
+  startPlayground: (eventId: string, mode: PlaygroundMode) =>
+    request<PlaygroundStartResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/playground/start`,
+      { method: 'POST', body: JSON.stringify({ mode }) },
+    ),
+  sendPlaygroundMessage: (
+    eventId: string,
+    history: PlaygroundTurn[],
+    message: string,
+    channel: string,
+  ) =>
+    request<PlaygroundMessageResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/playground/message`,
+      { method: 'POST', body: JSON.stringify({ history, message, channel }) },
+    ),
+  advancePlayground: (eventId: string, history: PlaygroundTurn[], channel: string) =>
+    request<PlaygroundAdvanceResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/playground/advance`,
+      { method: 'POST', body: JSON.stringify({ history, channel }) },
     ),
 
   getMetrics: () => request<MetricsBlock>('/api/metrics'),

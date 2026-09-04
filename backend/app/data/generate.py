@@ -118,6 +118,33 @@ def _pick_type(rng: random.Random) -> EventType:
     return rng.choices(types, weights=[_TYPE_WEIGHTS[t] for t in types], k=1)[0]
 
 
+# Common Indian UPI PSP handles -- cosmetic realism only. NOT a Razorpay
+# feature: Razorpay's test mode has no customer/contact simulator (verified
+# against the test-card/UPI docs), so this is entirely our own invented data,
+# same posture as `customer_id` below.
+_UPI_HANDLES = ["okhdfcbank", "ybl", "oksbi", "paytm", "ibl", "axl"]
+
+
+def _fake_contact(fake: Faker, rng: random.Random) -> dict[str, str]:
+    """A synthetic name + phone + bank account + UPI VPA for one customer.
+
+    Entirely invented (see module docstring / _UPI_HANDLES comment above) --
+    good enough to make a case read like a real record and to give the
+    Playground / Simulate feature a persona to role-play against.
+    """
+    name = fake.name()
+    phone = f"+91{rng.choice('6789')}{rng.randint(10**8, 10**9 - 1)}"
+    bank_account = str(fake.unique.random_number(digits=14, fix_len=True))
+    slug = name.lower().replace(" ", "").replace(".", "")[:12]
+    vpa = f"{slug}@{rng.choice(_UPI_HANDLES)}"
+    return {
+        "customer_name": name,
+        "customer_phone": phone,
+        "customer_bank_account": bank_account,
+        "customer_upi_vpa": vpa,
+    }
+
+
 def build_batch(count: int = 70, seed: int = 42) -> list[EventCreate]:
     """`count` ordinary events. Deterministic for a given `seed`.
 
@@ -125,7 +152,7 @@ def build_batch(count: int = 70, seed: int = 42) -> list[EventCreate]:
     out of the schema's constraints fails loudly here rather than at insert.
     """
     rng = random.Random(seed)
-    fake = Faker()
+    fake = Faker("en_IN")
     fake.seed_instance(seed)
 
     span_start = _epoch() - timedelta(days=BATCH_SPAN_DAYS)
@@ -145,6 +172,7 @@ def build_batch(count: int = 70, seed: int = 42) -> list[EventCreate]:
                 event_id=f"evt_{i:03d}",
                 event_type=etype,
                 customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
+                **_fake_contact(fake, rng),
                 amount=_rupees(rng),
                 raw_failure_reason=reason,
                 attempts_so_far=attempts,
@@ -161,7 +189,7 @@ def build_fraud_cluster(size: int = 4, seed: int = 42) -> list[EventCreate]:
     CLAUDE.md Section 6: the Diagnosis Agent must reclassify these as `flagged`.
     """
     rng = random.Random(seed + 1)
-    fake = Faker()
+    fake = Faker("en_IN")
     fake.seed_instance(seed + 1)
 
     low, high = float(FRAUD_AMOUNT_LOW), float(FRAUD_AMOUNT_HIGH)
@@ -171,6 +199,7 @@ def build_fraud_cluster(size: int = 4, seed: int = 42) -> list[EventCreate]:
             event_id=f"{FRAUD_ID_PREFIX}{i:02d}",
             event_type=EventType.FAILED_PAYMENT,
             customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
+            **_fake_contact(fake, rng),
             amount=_money(rng.uniform(low, high)),
             raw_failure_reason=FRAUD_REASON,
             attempts_so_far=rng.randint(2, 3),   # already retried hard
@@ -195,7 +224,7 @@ def build_silent_failures(
     only one who can find out what happened.
     """
     rng = random.Random(seed + 2)
-    fake = Faker()
+    fake = Faker("en_IN")
     fake.seed_instance(seed + 2)
 
     span_start = _epoch() - timedelta(days=BATCH_SPAN_DAYS)
@@ -205,6 +234,7 @@ def build_silent_failures(
             event_id=f"{SILENT_ID_PREFIX}{i:02d}",
             event_type=EventType.FAILED_PAYMENT,
             customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
+            **_fake_contact(fake, rng),
             amount=_rupees(rng),
             raw_failure_reason=None,          # the whole point
             attempts_so_far=rng.randint(1, 2),

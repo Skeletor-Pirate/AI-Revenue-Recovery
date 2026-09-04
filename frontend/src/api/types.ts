@@ -36,6 +36,12 @@ export interface EventRead {
   customer_id: string
   amount: string
   currency: string
+  /** Synthetic — Razorpay's test mode has no customer/contact simulator; the
+   * generator invents these, same posture as customer_id. Never real PII. */
+  customer_name?: string | null
+  customer_phone?: string | null
+  customer_bank_account?: string | null
+  customer_upi_vpa?: string | null
   raw_failure_reason: string | null
   attempts_so_far: number
   days_overdue: number
@@ -180,6 +186,8 @@ export interface EventVoiceAudioResponse {
   audio_format: string
   sample_rate: number
   audio: VoiceAudioClip[]
+  /** Why `available` is false — e.g. "no SARVAM_API_KEY configured". Null when available. */
+  reason?: string | null
 }
 
 export interface RetryStep {
@@ -261,4 +269,58 @@ export interface MetricsBlock {
 export interface PipelineRunResponse {
   ran_at: string
   metrics: MetricsBlock
+}
+
+// --- Simulate / Playground (backend: app/agents/playground.py) -------------
+// A sandboxed rehearsal: talk to the AI live and see how it actually
+// responds, instead of only reading the prerecorded call/WhatsApp transcript.
+// Writes nothing to the real events/tickets tables and never touches
+// MetricsBlock — every screen here is labeled as a rehearsal.
+
+export type PlaygroundMode = 'interactive' | 'auto'
+export type PlaygroundChannel = 'call' | 'message'
+export type PlaygroundOutcome = 'ongoing' | 'resolved' | 'escalated' | 'halted'
+export type PlaygroundSpeaker = 'agent' | 'customer'
+
+export interface PlaygroundTurn {
+  speaker: PlaygroundSpeaker
+  text: string
+}
+
+export interface PlaygroundPersona {
+  name: string
+  phone_masked: string | null
+  bank_account_masked: string | null
+  upi_vpa: string | null
+  amount: string
+  root_cause: RootCause | null
+  event_type: string
+  is_business: boolean
+  disposition: string
+}
+
+export interface PlaygroundStartResponse {
+  mode: PlaygroundMode
+  channel: PlaygroundChannel
+  /** Cosmetic rehearsal-ticket reference (e.g. "SIM-A1B2345") — never a real ticket row. */
+  ticket_ref: string
+  persona: PlaygroundPersona
+  opening_turn: PlaygroundTurn
+  outcome: PlaygroundOutcome
+  history: PlaygroundTurn[]
+}
+
+export interface PlaygroundMessageResponse {
+  turn: PlaygroundTurn
+  outcome: PlaygroundOutcome
+  reasoning: string
+  history: PlaygroundTurn[]
+}
+
+export interface PlaygroundAdvanceResponse {
+  customer_turn: PlaygroundTurn
+  agent_turn: PlaygroundTurn
+  outcome: PlaygroundOutcome
+  reasoning: string
+  history: PlaygroundTurn[]
 }

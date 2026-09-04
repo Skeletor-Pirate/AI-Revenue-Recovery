@@ -73,6 +73,7 @@ Full run / test / deploy detail is in [**Running, testing & deploying**](#runnin
 | **Audit trail** | Every agent action is a row in `audit_log`, written via the single `store.log_action()`; `reasoning` is never empty. `GET /api/events/{id}/audit`. |
 | **Honest exception list** | Every non-recovered case with its stated reason — never truncated, never cherry-picked. Dashboard `/exceptions`. |
 | **One failure handled gracefully** | The fraud-cluster triage halt (below). |
+| **Compliant human escalation, not just a flag** | `app/agents/triage.py` opens a priority-ordered review ticket for every case the automation could not finish; a signed-in reviewer takes it, records what they did, and closes it resolved/unresolved — audited as `agent="human"`. Dashboard `/attention`. |
 
 ---
 
@@ -122,6 +123,12 @@ Agent names and outreach tone mirror Razorpay's own Agent Studio agents
 | 5 | **Mandate retry sequencer** | `app/agents/sequencer.py` → Rail-aware (UPI AutoPay / e-NACH / Cards), salary-cycle optimized retry schedule with NPCI 3-attempt limit. |
 | 6 | **Hinglish voice recovery** | `app/agents/voice.py` + `app/agents/voice_tts.py` + `VoiceCallDrawer.tsx` → Conversational code-switched Hinglish call dialogue, spoken with **Sarvam AI (`bulbul`) neural TTS** (separate agent/customer voices), plus WhatsApp nudge copy. Falls back to the browser voice without `SARVAM_API_KEY`. |
 | 7 | **Promise-to-pay tracker** | `app/agents/ptp.py` + `PTPModal.tsx` → Customer commitment tracking state machine (`promised` → `honored`/`broken`), escalation pause, and reliability metrics. |
+
+**Beyond the 7 directions:** the brief's stopping-rules section (§6) already
+asks for cases to "auto-flag for human review" and for the approval-threshold
+gate to be "simulated ... not a UI, if time is short." `app/agents/triage.py` +
+the `/attention` dashboard page build the not-short-on-time version — a real,
+priority-ordered, audited human review queue. See below.
 
 ---
 
@@ -231,13 +238,13 @@ The React dashboard offers an end-to-end interactive playground for all 7 Builda
    - **Root Cause & Confidence**: View AI diagnosis with confidence percentage and reasoning.
    - **RAG Evidence**: Inspect the nearest historical cases retrieved from pgvector.
    - **Direction 5 (Mandate Retry Sequencer)**: Click the **"Sequencer Timeline"** tab to view rail-aware (UPI AutoPay / e-NACH / Cards) retry schedules, salary-cycle alignment (1st of month at 09:30 IST), and NPCI 3-attempt limits.
-   - **Direction 6 (Hinglish Voice Recovery)**: Click **"Generate Hinglish Call"** to inspect the turn-by-turn dialogue, click **"Play Call Audio"** to hear synthesized voice playback via the browser Web Speech API, and copy WhatsApp nudge templates.
+   - **Direction 6 (Hinglish Voice Recovery)**: Click **"Generate Hinglish Call"** to inspect the turn-by-turn dialogue and click **"Play Simulated Call"** to hear it spoken with **Sarvam AI (`bulbul`) neural TTS** (falls back to the browser voice without `SARVAM_API_KEY`); copy WhatsApp nudge templates; click **"Customer asked something we can't answer"** to see a live question escalate into the review queue.
    - **Direction 7 (Promise-to-Pay Tracker)**: Click **"Record Promise to Pay"**, pick a date and note, and observe how the engine automatically pauses escalation workflows and updates the queue status badge (`🤝 promised`).
 4. **Explore Other Views**:
    - `/` (Executive Overview & Financial KPIs)
    - `/recovery` (Recovery Funnel & Payment Rail Analytics)
    - `/exceptions` (Fraud Cluster Triage Halt & Honest Exception List)
-   - `/audit` (Immutable, chronological log of every single agent decision)
+   - `/attention` (**Urgent human attention**: priority-ordered review queue — sign in with a work email, take a ticket, record what you did, close it resolved/unresolved; the "₹ recovered" KPI splits agent-vs-human)
 
 ---
 
@@ -317,9 +324,86 @@ curl -X POST http://localhost:8000/api/events/evt_01JNC000000000000000000001/ptp
   }'
 ```
 
+#### E. Urgent Human Attention — the review queue
+```bash
+# priority-ordered queue (most urgent first)
+curl -X GET http://localhost:8000/api/tickets
+
+# take a ticket
+curl -X POST http://localhost:8000/api/tickets/tkt_0001/assign \
+  -H "Content-Type: application/json" \
+  -d '{"employee_email": "asha@acme.com"}'
+
+# record what you did and close it
+curl -X POST http://localhost:8000/api/tickets/tkt_0001/resolve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "employee_email": "asha@acme.com",
+    "outcome": "resolved",
+    "note": "Called the customer, sent a fresh UPI link; paid on the call.",
+    "recovered_amount": "4500.00"
+  }'
+
+# mid-call, a question the AI cannot answer
+curl -X POST http://localhost:8000/api/events/evt_01JNC000000000000000000001/raise-question \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Mera pichla refund kab tak aayega?", "channel": "voice_call"}'
+```
+
+#### F. ⚡ Simulate — talk to the AI yourself
+
+The **Simulate** feature lets a judge, developer, or evaluator take the role of
+the customer and chat with the AI Recovery Agent live — or watch two AI personas
+(Agent + Customer) converse automatically. It's a sandboxed rehearsal:
+**no metrics are touched; `/api/metrics` is byte-identical before and after.**
+
+> **Tip:** Use `GET /api/events` first to pick a real `event_id` from the batch.
+> The Playground is also accessible from the dashboard at `/playground`.
+
+```bash
+# --- pick any event from the batch first ---
+EVENT_ID="evt_01"   # replace with a real event_id from GET /api/events
+
+# 1. Start a session (interactive: you play the customer)
+curl -X POST http://localhost:8000/api/events/${EVENT_ID}/playground/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "interactive"}'
+# → { "mode": "interactive", "channel": "call", "ticket_ref": "SIM-…",
+#     "persona": { "name": "…", "phone_masked": "…" },
+#     "opening_turn": { "speaker": "agent", "text": "Namaste, …" },
+#     "history": […], "outcome": "ongoing" }
+
+# 2. Reply as the customer (copy the full history array from step 1)
+curl -X POST http://localhost:8000/api/events/${EVENT_ID}/playground/message \
+  -H "Content-Type: application/json" \
+  -d '{
+    "history": [{ "speaker": "agent", "text": "Namaste, …" }],
+    "message": "Haan theek hai, main abhi pay karta hoon",
+    "channel": "call"
+  }'
+# → { "turn": { "speaker": "agent", "text": "…" }, "outcome": "resolved",
+#     "reasoning": "…", "history": […] }
+
+# --- auto mode: watch two AIs talk ---
+curl -X POST http://localhost:8000/api/events/${EVENT_ID}/playground/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "auto"}'
+# then repeatedly call /advance until outcome ≠ "ongoing":
+curl -X POST http://localhost:8000/api/events/${EVENT_ID}/playground/advance \
+  -H "Content-Type: application/json" \
+  -d '{ "history": [/* paste from previous response */], "channel": "call" }'
+# → { "customer_turn": {…}, "agent_turn": {…}, "outcome": "…", "history": […] }
+
+# Confirm metrics never changed (optional but instructive):
+curl http://localhost:8000/api/metrics | python -m json.tool
+```
+
+Works without an LLM key — deterministic offline fallback kicks in automatically.
+With an LLM key set in `backend/.env`, both personas are live LLM calls.
+
 ---
 
-### Method 4: CLI Pipeline & Automated Test Suite (Full Verification)
+
 
 Run the full pipeline and test suites directly from your terminal:
 

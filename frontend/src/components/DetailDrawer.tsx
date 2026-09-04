@@ -11,6 +11,7 @@ import { AuditTimeline } from './AuditTimeline'
 import { StatusPill } from './StatusPill'
 import { Skeleton, ErrorState } from './Feedback'
 import { VoiceCallDrawer } from './VoiceCallDrawer'
+import { SimulateSession } from './SimulateSession'
 import { PTPModal } from './PTPModal'
 import { SequencerTimeline } from './SequencerTimeline'
 import type { EventRead } from '../api/types'
@@ -24,11 +25,36 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
   )
 }
 
+const maskTail = (v: string | null | undefined): string | null => {
+  if (!v) return null
+  const tail = v.slice(-4)
+  return `${'•'.repeat(Math.max(v.length - 4, 4))}${tail}`
+}
+
 function Summary({ event }: { event: EventRead }) {
+  const hasContact = event.customer_name || event.customer_phone || event.customer_upi_vpa
   return (
     <div className="rounded-xl bg-surface-2 p-4">
       <SummaryRow label="Case" value={<span className="font-mono">{event.event_id}</span>} />
       <SummaryRow label="Customer" value={<span className="font-mono">{event.customer_id}</span>} />
+      {hasContact && (
+        <>
+          {event.customer_name && <SummaryRow label="Name" value={event.customer_name} />}
+          {event.customer_phone && (
+            <SummaryRow label="Phone" value={<span className="font-mono">{maskTail(event.customer_phone)}</span>} />
+          )}
+          {event.customer_bank_account && (
+            <SummaryRow
+              label="Bank account"
+              value={<span className="font-mono">{maskTail(event.customer_bank_account)}</span>}
+            />
+          )}
+          {event.customer_upi_vpa && (
+            <SummaryRow label="UPI VPA" value={<span className="font-mono">{event.customer_upi_vpa}</span>} />
+          )}
+          <p className="text-[10px] text-ink-muted -mt-0.5 mb-1">synthetic test data, not a real record</p>
+        </>
+      )}
       <SummaryRow label="Type" value={labelEventType(event.event_type)} />
       <SummaryRow label="Amount at risk" value={formatINRPrecise(event.amount)} />
       <SummaryRow label="Recovered" value={formatINRPrecise(event.recovered_amount)} />
@@ -71,6 +97,7 @@ export function DetailDrawer({
 }) {
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [ptpOpen, setPtpOpen] = useState(false)
+  const [simulateOpen, setSimulateOpen] = useState(false)
 
   useEffect(() => {
     if (!caseId) return
@@ -133,6 +160,13 @@ export function DetailDrawer({
                   >
                     🤝 Record PTP
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setSimulateOpen(true)}
+                    className="px-2.5 py-1 text-xs font-medium rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 transition-colors"
+                  >
+                    🧪 Simulate
+                  </button>
                 </div>
               </div>
 
@@ -164,6 +198,12 @@ export function DetailDrawer({
         isOpen={ptpOpen}
         onClose={() => setPtpOpen(false)}
         onSuccess={() => state.reload()}
+      />
+
+      <SimulateSession
+        eventId={caseId}
+        isOpen={simulateOpen}
+        onClose={() => setSimulateOpen(false)}
       />
     </>
   )

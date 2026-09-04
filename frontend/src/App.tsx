@@ -5,6 +5,7 @@ import { Queue } from './pages/Queue'
 import { Recovery } from './pages/Recovery'
 import { Exceptions } from './pages/Exceptions'
 import { Attention } from './pages/Attention'
+import { Playground } from './pages/Playground'
 
 function CaseRedirect() {
   const { id } = useParams()
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/recovery" element={<Recovery />} />
           <Route path="/exceptions" element={<Exceptions />} />
           <Route path="/attention" element={<Attention />} />
+          <Route path="/playground" element={<Playground />} />
           <Route path="/case/:id" element={<CaseRedirect />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

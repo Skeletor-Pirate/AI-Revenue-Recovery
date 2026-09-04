@@ -254,3 +254,97 @@ def test_raise_customer_question_opens_a_ticket(client):
                        json={"question": "hi"}).status_code == 404
     assert client.post(f"/api/events/{eid}/raise-question",
                        json={"question": "hi", "channel": "pigeon"}).status_code == 422
+
+
+# --- Simulate / Playground ---------------------------------------------
+# The core guarantee: a full rehearsal, in either mode, changes nothing in
+# the real store and nothing in MetricsBlock.
+
+def _db_snapshot():
+    with store.get_session() as s:
+        return (
+            len(store.all_events(s)),
+            len(store.get_tickets(s)),
+            len(store.get_audit_trail(s)),
+        )
+
+
+def _speaker_text(turn: dict) -> dict:
+    """Drop any optional audio_base64 (present for real when SARVAM_API_KEY is
+    live) so history-vs-turn comparisons aren't sensitive to whether TTS ran."""
+    return {"speaker": turn["speaker"], "text": turn["text"]}
+
+
+def test_playground_start_interactive(client):
+    eid = client.get("/api/events").json()["events"][0]["event_id"]
+    r = client.post(f"/api/events/{eid}/playground/start", json={"mode": "interactive"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["mode"] == "interactive"
+    assert body["channel"] in ("call", "message")
+    assert body["ticket_ref"].startswith("SIM-")
+    assert body["opening_turn"]["speaker"] == "agent"
+    assert body["outcome"] == "ongoing"
+    assert body["history"] == [_speaker_text(body["opening_turn"])]
+    assert {"name", "phone_masked", "bank_account_masked", "upi_vpa"} <= body["persona"].keys()
+
+    assert client.post("/api/events/nope/playground/start", json={}).status_code == 404
+
+
+def test_playground_interactive_message_reaches_an_outcome(client):
+    eid = client.get("/api/events").json()["events"][0]["event_id"]
+    started = client.post(f"/api/events/{eid}/playground/start", json={"mode": "interactive"}).json()
+
+    r = client.post(
+        f"/api/events/{eid}/playground/message",
+        json={"history": started["history"], "message": "Haan theek hai, main abhi pay karta hoon",
+              "channel": started["channel"]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["turn"]["speaker"] == "agent"
+    assert body["outcome"] in ("ongoing", "resolved", "escalated", "halted")
+    assert body["history"][-1] == _speaker_text(body["turn"])
+
+    assert client.post("/api/events/nope/playground/message",
+                       json={"history": [], "message": "hi"}).status_code == 404
+
+
+def test_playground_auto_mode_advances_two_ai_turns(client):
+    eid = client.get("/api/events").json()["events"][0]["event_id"]
+    started = client.post(f"/api/events/{eid}/playground/start", json={"mode": "auto"}).json()
+
+    r = client.post(
+        f"/api/events/{eid}/playground/advance",
+        json={"history": started["history"], "channel": started["channel"]},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["customer_turn"]["speaker"] == "customer"
+    assert body["agent_turn"]["speaker"] == "agent"
+    assert body["history"] == [
+        *started["history"], _speaker_text(body["customer_turn"]), _speaker_text(body["agent_turn"]),
+    ]
+
+    assert client.post("/api/events/nope/playground/advance",
+                       json={"history": []}).status_code == 404
+
+
+def test_playground_never_touches_the_real_store_or_metrics(client):
+    eid = client.get("/api/events").json()["events"][0]["event_id"]
+    before_db = _db_snapshot()
+    before_metrics = client.get("/api/metrics").json()
+
+    started = client.post(f"/api/events/{eid}/playground/start", json={"mode": "auto"}).json()
+    history = started["history"]
+    for _ in range(3):
+        adv = client.post(f"/api/events/{eid}/playground/advance",
+                          json={"history": history, "channel": started["channel"]}).json()
+        history = adv["history"]
+        if adv["outcome"] != "ongoing":
+            break
+    client.post(f"/api/events/{eid}/playground/message",
+               json={"history": history, "message": "haan theek hai", "channel": started["channel"]})
+
+    assert _db_snapshot() == before_db
+    assert client.get("/api/metrics").json() == before_metrics

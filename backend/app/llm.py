@@ -68,12 +68,13 @@ def available(settings: Any) -> bool:
 
 def _openai_compatible(
     *, base_url: str, api_key: str, model: str, system: str | None,
-    user: str, max_tokens: int, extra_headers: dict[str, str] | None = None,
+    turns: list[dict[str, str]], max_tokens: int,
+    extra_headers: dict[str, str] | None = None,
 ) -> str:
     messages: list[dict[str, str]] = []
     if system:
         messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": user})
+    messages.extend(turns)
     headers = {"Authorization": f"Bearer {api_key}"}
     if extra_headers:
         headers.update(extra_headers)
@@ -87,10 +88,15 @@ def _openai_compatible(
     return resp.json()["choices"][0]["message"]["content"].strip()
 
 
-def chat(
-    system: str | None, user: str, *, settings: Any, max_tokens: int = 512
+def _complete(
+    system: str | None, turns: list[dict[str, str]], *, settings: Any, max_tokens: int
 ) -> str:
-    """One-shot completion. Returns the model's text. Raises on no provider."""
+    """Shared provider dispatch for both `chat()` and `chat_turns()`.
+
+    `turns` is the full conversation as ``[{"role": "user"|"assistant",
+    "content": str}, ...]`` in chronological order; `system` is always passed
+    separately (every provider here supports that split).
+    """
     provider = resolve_provider(settings)
     if provider is None:
         raise LLMUnavailable("no LLM provider configured")
@@ -105,7 +111,7 @@ def chat(
         kwargs: dict[str, Any] = {
             "model": _get(settings, "anthropic_model", "claude-sonnet-5"),
             "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": user}],
+            "messages": turns,
         }
         if system:
             kwargs["system"] = system
@@ -129,7 +135,7 @@ def chat(
                 settings, "openrouter_model", "anthropic/claude-3.7-sonnet"
             ),
             system=system,
-            user=user,
+            turns=turns,
             max_tokens=max_tokens,
             extra_headers={
                 "HTTP-Referer": "https://github.com/Space-Fighter/AI-Revenue-Recovery",
@@ -146,11 +152,41 @@ def chat(
             api_key=api_key,
             model=_get(settings, "openai_model", "gpt-4o-mini"),
             system=system,
-            user=user,
+            turns=turns,
             max_tokens=max_tokens,
         )
 
     raise LLMUnavailable(f"unknown LLM provider: {provider!r}")
+
+
+def chat(
+    system: str | None, user: str, *, settings: Any, max_tokens: int = 512
+) -> str:
+    """One-shot completion. Returns the model's text. Raises on no provider."""
+    return _complete(
+        system, [{"role": "user", "content": user}], settings=settings,
+        max_tokens=max_tokens,
+    )
+
+
+def chat_turns(
+    system: str | None,
+    turns: list[dict[str, str]],
+    *,
+    settings: Any,
+    max_tokens: int = 400,
+) -> str:
+    """Multi-turn completion for a live conversation (the Playground agent).
+
+    `turns` is the conversation so far from *this* speaker's point of view:
+    its own prior lines are ``"assistant"``, the other side's are ``"user"``,
+    in chronological order — e.g. the Recovery Agent and the Customer/Business
+    personas each call this with the same transcript relabelled from their own
+    perspective, so each genuinely reacts to what the other just said instead
+    of one model pre-writing both halves. Same provider auto-detection /
+    `LLMUnavailable` as `chat()`.
+    """
+    return _complete(system, turns, settings=settings, max_tokens=max_tokens)
 
 
 def model_label(settings: Any) -> str:

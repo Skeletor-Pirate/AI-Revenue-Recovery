@@ -9,10 +9,18 @@ import fixturesJson from './fixtures.json'
 import { api } from './client'
 import type {
   EventAuditResponse,
+  EventRead,
   EventSimilarResponse,
   EventsResponse,
   MetricsBlock,
   PipelineRunResponse,
+  PlaygroundAdvanceResponse,
+  PlaygroundChannel,
+  PlaygroundMessageResponse,
+  PlaygroundMode,
+  PlaygroundOutcome,
+  PlaygroundStartResponse,
+  PlaygroundTurn,
   TicketDetailResponse,
   TicketRead,
   TicketsResponse,
@@ -57,6 +65,96 @@ const patchTicket = (id: string, patch: Partial<TicketRead>): TicketRead => {
   if (i < 0) throw new Error(`no such ticket: ${id}`)
   ticketsMem[i] = { ...ticketsMem[i], ...patch, updated_at: new Date().toISOString() }
   return ticketsMem[i]
+}
+
+// --- fixture-mode Simulate / Playground -------------------------------
+// A lightweight mirror of the backend's deterministic (no-LLM-key) fallback
+// in app/agents/playground.py, so the feature demos end-to-end without a
+// live backend. Same sandboxing property trivially holds: nothing here
+// touches fx.events or any other fixture data.
+
+const _CALL_CAUSES = new Set([
+  'insufficient_funds', 'expired_instrument', 'bank_downtime',
+  'auth_failure', 'card_declined', 'suspected_fraud',
+])
+
+const _mask = (value: string | null | undefined): string | null => {
+  if (!value) return null
+  const tail = value.slice(-4)
+  return `${'•'.repeat(Math.max(value.length - 4, 4))}${tail}`
+}
+
+const fixtureChannel = (event: EventRead): PlaygroundChannel =>
+  event.root_cause && _CALL_CAUSES.has(event.root_cause) ? 'call' : 'message'
+
+const fixtureEvent = (id: string): EventRead =>
+  fx.events.events.find((e) => e.event_id === id) ?? fx.events.events[0]
+
+const fixturePersona = (event: EventRead) => ({
+  name: event.customer_name ?? event.customer_id,
+  phone_masked: _mask(event.customer_phone),
+  bank_account_masked: _mask(event.customer_bank_account),
+  upi_vpa: event.customer_upi_vpa ?? null,
+  amount: event.amount,
+  root_cause: event.root_cause,
+  event_type: event.event_type,
+  is_business: event.event_type === 'overdue_invoice',
+  disposition: 'cooperative',
+})
+
+const fixtureOpening = (event: EventRead): string => {
+  const persona = fixturePersona(event)
+  return `Namaste ${persona.name} ji! Aapka Rs ${persona.amount} ka ${persona.event_type.replace(/_/g, ' ')} pending hai. Kya hum iske baare mein baat kar sakte hain?`
+}
+
+const fixtureAgentReply = (
+  name: string,
+  message: string,
+  turnIndex: number,
+): { reply: string; outcome: PlaygroundOutcome; reasoning: string } => {
+  const text = message.toLowerCase()
+  if (/fraud|scam|nahi kiya|galat|block/.test(text)) {
+    return {
+      reply: `Samajh gaya ${name} ji, main isse turant ek human reviewer ko bhej raha hoon.`,
+      outcome: 'escalated',
+      reasoning: 'Customer disputes the transaction; needs human verification.',
+    }
+  }
+  if (/angry|gussa|complaint|manager|escalate|\bno\b|nahi/.test(text)) {
+    return {
+      reply: 'Bilkul, main ise human team ko forward kar deta hoon jo aapki behtar madad kar payenge.',
+      outcome: 'escalated',
+      reasoning: "Customer asked for a person / pushed back beyond the agent's bounded authority.",
+    }
+  }
+  if (/haan|yes|theek|\bok\b|okay|sure|pay|done|kar|thik/.test(text)) {
+    return {
+      reply: `Shukriya ${name} ji! Maine confirm kar diya hai, aapka case resolve ho gaya.`,
+      outcome: 'resolved',
+      reasoning: 'Customer agreed to pay / confirmed resolution.',
+    }
+  }
+  if (turnIndex >= 3) {
+    return {
+      reply: 'Koi baat nahi, main is case ko human review ke liye bhej deta hoon taaki hum aapki sahi madad kar sakein.',
+      outcome: 'escalated',
+      reasoning: 'No clear resolution after a few exchanges; handing off rather than looping.',
+    }
+  }
+  return {
+    reply: `Samajh sakta hoon ${name} ji. Kya main aapko turant ek payment link bhej doon?`,
+    outcome: 'ongoing',
+    reasoning: '',
+  }
+}
+
+const fixtureCustomerReply = (turnIndex: number): string => {
+  const lines = [
+    'Haan bataiye, kya baat hai?',
+    'Achha theek hai, thoda samajh nahi aaya, aap detail mein bata sakte hain?',
+    'Theek hai, mujhe lagta hai main abhi pay kar sakta hoon.',
+  ]
+  return lines[Math.min(turnIndex, lines.length - 1)]
 }
 
 export const dataSource = {
@@ -239,6 +337,66 @@ export const dataSource = {
     }
     ticketsMem.push(ticket)
     return settle({ status: 'ok', ticket })
+  },
+
+  // --- Simulate / Playground (sandboxed rehearsal) ---
+
+  async startPlayground(eventId: string, mode: PlaygroundMode): Promise<PlaygroundStartResponse> {
+    if (IS_LIVE) return api.startPlayground(eventId, mode)
+    const event = fixtureEvent(eventId)
+    const opening: PlaygroundTurn = { speaker: 'agent', text: fixtureOpening(event) }
+    return settle({
+      mode,
+      channel: fixtureChannel(event),
+      ticket_ref: `SIM-${eventId.slice(-4).toUpperCase()}${Math.floor(Math.random() * 900 + 100)}`,
+      persona: fixturePersona(event),
+      opening_turn: opening,
+      outcome: 'ongoing',
+      history: [opening],
+    })
+  },
+
+  async sendPlaygroundMessage(
+    eventId: string,
+    history: PlaygroundTurn[],
+    message: string,
+    _channel: string,
+  ): Promise<PlaygroundMessageResponse> {
+    if (IS_LIVE) return api.sendPlaygroundMessage(eventId, history, message, _channel)
+    const event = fixtureEvent(eventId)
+    const persona = fixturePersona(event)
+    const withCustomer: PlaygroundTurn[] = [...history, { speaker: 'customer', text: message }]
+    const turnIndex = withCustomer.filter((h) => h.speaker === 'customer').length
+    const result = fixtureAgentReply(persona.name, message, turnIndex)
+    const turn: PlaygroundTurn = { speaker: 'agent', text: result.reply }
+    return settle({
+      turn,
+      outcome: result.outcome,
+      reasoning: result.reasoning,
+      history: [...withCustomer, turn],
+    })
+  },
+
+  async advancePlayground(
+    eventId: string,
+    history: PlaygroundTurn[],
+    _channel: string,
+  ): Promise<PlaygroundAdvanceResponse> {
+    if (IS_LIVE) return api.advancePlayground(eventId, history, _channel)
+    const event = fixtureEvent(eventId)
+    const persona = fixturePersona(event)
+    const turnIndex = history.filter((h) => h.speaker === 'customer').length
+    const customerTurn: PlaygroundTurn = { speaker: 'customer', text: fixtureCustomerReply(turnIndex) }
+    const withCustomer = [...history, customerTurn]
+    const result = fixtureAgentReply(persona.name, customerTurn.text, turnIndex + 1)
+    const agentTurn: PlaygroundTurn = { speaker: 'agent', text: result.reply }
+    return settle({
+      customer_turn: customerTurn,
+      agent_turn: agentTurn,
+      outcome: result.outcome,
+      reasoning: result.reasoning,
+      history: [...withCustomer, agentTurn],
+    })
   },
 
   async runPipeline(): Promise<PipelineRunResponse> {

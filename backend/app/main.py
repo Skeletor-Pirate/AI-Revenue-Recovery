@@ -6,6 +6,7 @@ Docs:                 http://localhost:8000/docs
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,12 +18,20 @@ from app.db import store
 from app.webhooks import router as webhooks_router
 
 settings = get_settings()
+logger = logging.getLogger("app.main")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ensure tables exist on startup
     store.init_db(settings.database_url)
+    # Surface config-that-looks-silent at a glance -- Sarvam degrading to the
+    # browser voice is otherwise indistinguishable from "not configured" vs
+    # "a stale process never picked up the .env edit" without a debugging pass.
+    logger.info(
+        "Sarvam TTS: %s",
+        "configured" if settings.sarvam_api_key else "not configured (browser voice fallback)",
+    )
     yield
 
 

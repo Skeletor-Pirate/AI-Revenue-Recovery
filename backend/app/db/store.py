@@ -165,6 +165,15 @@ class Event(SQLModel, table=True):
     customer_id: str
     amount: Decimal = Field(max_digits=14, decimal_places=2)  # -> NUMERIC(14,2)
     currency: str = "INR"
+    # Synthetic contact details -- entirely invented by the generator, same
+    # posture as customer_id. Razorpay's test mode has no customer/contact
+    # simulator (verified against the test-card/UPI docs); these exist so a
+    # case reads like a real record and so the Playground has a persona to
+    # role-play against. Never real PII.
+    customer_name: str | None = None
+    customer_phone: str | None = None            # synthetic +91 mobile
+    customer_bank_account: str | None = None      # synthetic account number
+    customer_upi_vpa: str | None = None           # synthetic VPA, cosmetic PSP handle
     raw_failure_reason: str | None = None   # gateway's words, pre-diagnosis
     attempts_so_far: int = 0                # for stopping-rule enforcement
     days_overdue: int = 0                   # for B2B invoices
@@ -307,6 +316,10 @@ class EventCreate(SQLModel):
     customer_id: str = Field(min_length=1)
     amount: Decimal = Field(gt=0, max_digits=14)
     currency: str = Field(default="INR", min_length=3, max_length=3)
+    customer_name: str | None = None
+    customer_phone: str | None = None
+    customer_bank_account: str | None = None
+    customer_upi_vpa: str | None = None
     raw_failure_reason: str | None = None
     attempts_so_far: int = Field(default=0, ge=0)
     days_overdue: int = Field(default=0, ge=0)
@@ -368,6 +381,10 @@ class EventRead(SQLModel):
     customer_id: str
     amount: Decimal
     currency: str
+    customer_name: str | None = None
+    customer_phone: str | None = None
+    customer_bank_account: str | None = None
+    customer_upi_vpa: str | None = None
     raw_failure_reason: str | None
     attempts_so_far: int
     days_overdue: int

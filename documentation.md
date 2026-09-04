@@ -8,7 +8,17 @@ rationale) and [CLAUDE.md](CLAUDE.md) (the project brief).
 > `architecture.md` to be updated in the same change that adds/alters a file,
 > function, class, endpoint, table, or command.
 
-Last updated: 2026-09-04 — **Urgent human attention / review tickets**: new
+Last updated: 2026-09-04 — **Simulate / Playground + Sarvam TTS fix + synthetic
+contact data**: `app/agents/playground.py` (stateless sandboxed rehearsal, two
+independently-prompted LLM personas, `interactive` + `auto` modes); 3 new routes
+(`POST /events/{id}/playground/start|message|advance`); `chat_turns()` added to
+`app/llm.py`; synthetic contact fields (`customer_name/phone/bank_account/upi_vpa`)
+on `Event`/`EventCreate`/`EventRead`; `frontend/.env` created (`VITE_DATA_SOURCE=live`)
+— fixes Sarvam TTS. New frontend pages: `Playground.tsx` + `SimulateSession.tsx`.
+New tests: `test_playground.py` (26), extended `test_llm.py` (8 total), 4 new
+playground endpoint tests in `test_api.py`. Docs: §3.3, §3.4, §3.5, §5 endpoints,
+§7 Event columns, §9 `llm.py` functions, §12 test inventory all updated.
+Prior: 2026-09-04 — **Urgent human attention / review tickets**: new
 `tickets` table + `TicketStatus` / `TicketReason` enums + `Agent.HUMAN` and
 `Event.human_recovered_amount` (`app/db/store.py`); new Triage agent
 (`app/agents/triage.py`) wired into `pipeline.py` between Recovery and Audit;
@@ -171,7 +181,7 @@ RAZORPAY BUILDATHON/
 | `app/__init__.py` … `app/webhooks/__init__.py` | Package markers. `agents/`, `api/`, `webhooks/` are empty placeholders. | scaffold |
 | `app/main.py` | FastAPI application. See §5. | minimal (health only) |
 | `app/config.py` | `Settings` (pydantic-settings) + cached `get_settings()`. See §4. | done |
-| `app/llm.py` | Provider-agnostic LLM client for Diagnosis + Recovery. Chat: `chat()`, `available()`, `resolve_provider()`, `model_label()`, `LLMUnavailable` — auto-detects `anthropic → openrouter → openai` (or `LLM_PROVIDER`). Embeddings (for RAG): `embed(texts, *, settings) -> list[list[float]]`, `embeddings_available()`, `resolve_embed_provider()`, `embed_label()` — OpenAI `text-embedding-3-small` (`dimensions=384`) if `OPENAI_API_KEY`, else local `fastembed` `all-MiniLM-L6-v2` (384-d). `EMBED_DIM = 384`. | **done** |
+| `app/llm.py` | Provider-agnostic LLM client for Diagnosis + Recovery + Playground. Chat: `chat()` (one-shot), `chat_turns()` (multi-turn, for the Playground personas), `available()`, `resolve_provider()`, `model_label()`, `LLMUnavailable` — auto-detects `anthropic → openrouter → openai` (or `LLM_PROVIDER`). Embeddings (for RAG): `embed(texts, *, settings) -> list[list[float]]`, `embeddings_available()`, `resolve_embed_provider()`, `embed_label()` — OpenAI `text-embedding-3-small` (`dimensions=384`) if `OPENAI_API_KEY`, else local `fastembed` `all-MiniLM-L6-v2` (384-d). `EMBED_DIM = 384`. | **done** |
 | `app/rag.py` | RAG knowledge base for the Diagnosis Agent. `case_text(event)`, `RevRecEmbeddings` (LangChain `Embeddings` wrapper over `llm.embed`), `retrieve_similar(session, event, *, settings, k)`, `format_for_prompt(similar)`, `seed_reference_cases(session, *, settings)` (~20 canonical examples, first run only), `index_resolved_cases(session, *, settings)` (append confidently-classified batch events; dedup + bucket-cap). No-op when pgvector or embeddings are unavailable. | **done** |
 | `app/db/store.py` | The shared event store: table models, Pydantic schema models, engine/session helpers, CRUD + audit functions. See §6–§9. | **done, step 1** |
 | `app/data/generate.py` | Deterministic synthetic batch generator incl. fraud cluster. See §10. | **done, step 2** |
@@ -181,14 +191,15 @@ RAZORPAY BUILDATHON/
 | `app/agents/diagnosis.py` | Diagnosis Agent. `run()`, pure `classify(event) -> (RootCause, conf, matched_reason, reasoning)`, `find_fraud_clusters(events)`, isolated `claude_classify(event, settings)`. Fraud triage first (→ `flagged`/`suspected_fraud`), then rules map, then Claude fallback when rules conf ≤ 0.5 on free text. Details: `AGENTS_CONTRACT.md` §2/§5/§6. | **done, step 4** |
 | `app/agents/recovery.py` | Recovery Agent. `run()`, `draft_outreach(intervention, event, *, settings)`, `_stable_hash(event_id)`; constants `MAX_RETRY_ATTEMPTS=3`, `MAX_ESCALATION_STAGE=3`, `COOLDOWN_HOURS=24`, `HUMAN_APPROVAL_THRESHOLD_INR=Decimal("5000")`, `SUCCESS_RATES`, `HOURS_TO_RECOVERY`, `INTERVENTIONS`. Reads `diagnosed` only. Deterministic recovered/exception; human-approval gate logs + does not execute; escalation never past stage 3. Details: `AGENTS_CONTRACT.md` §4/§7/§10. | **done, step 5** |
 | `app/agents/sequencer.py` | **Mandate Retry Sequencer (Direction 5).** `plan_retry_sequence(event)` — calendar & salary-cycle aware, rail-adaptive (UPI AutoPay / e-NACH / Card Token), NPCI 3-attempt compliant retry sequencer. | **done** |
-| `app/agents/voice.py` | **Hinglish Voice Recovery Agent (Direction 6).** `generate_hinglish_voice_script(event)` — conversational multi-turn phone dialogue and WhatsApp outreach in natural Hinglish. | **done** |
-| `app/agents/voice_tts.py` | **Hinglish Voice TTS (Direction 6).** `synthesize_script(script)` / `synthesize_turn(text, speaker)` — Sarvam AI `bulbul` neural speech per dialogue turn (agent vs customer speaker), returns base64 WAV. `available(settings)` gate; never raises — returns `available: false` with no key or on provider error. | **done** |
+| `app/agents/voice.py` | **Hinglish Voice Recovery Agent (Direction 6).** `generate_hinglish_voice_script(event)` — conversational multi-turn phone dialogue and WhatsApp outreach in natural Hinglish. One-shot prerecorded transcript (one LLM call, deterministic for a given case). | **done** |
+| `app/agents/voice_tts.py` | **Hinglish Voice TTS (Direction 6).** `synthesize_script(script)` / `synthesize_turn(text, speaker)` — Sarvam AI `bulbul` neural speech per dialogue turn (agent vs customer speaker), returns base64 WAV. `available(settings)` gate; never raises — returns `available: false` with no key or on provider error. Returns a `reason` field for diagnosability. | **done** |
+| `app/agents/playground.py` | **Simulate / Playground.** Stateless sandboxed rehearsal agent. Public API: `pick_channel(event)`, `build_persona(event)`, `start_session(event, *, mode, settings)`, `send_message(event, history, message, channel, *, settings)`, `advance_conversation(event, history, channel, *, settings)`. Two independently-prompted LLM personas (`chat_turns`): Resolver (agent) + Customer/Business; each reacts to the real transcript from its own POV. `interactive` mode: tester types as the customer; `auto` mode: two AIs talk. **Never writes to the store** — deterministic offline fallback (no LLM key), per-root-cause `_DISPOSITIONS` map, fenced-JSON parsing with fallback, optional Sarvam TTS per turn. | **done** |
 | `app/agents/triage.py` | **Human Review Triage.** Pipeline stage between Recovery and Audit. `run(session)` opens one priority-scored ticket per `flagged`/`exception` event that has none (idempotent, never reopens closed work); `_classify(event, trail)` → `TicketReason` from the event's own audit trail; `_priority(reason, event)` = `PRIORITY_BASE[reason] + min(15, amount/5000)`; `_summarize(...)` writes the plain-English "why a human is needed" line; `priority_band(n)` → critical/high/medium/low. Human actions: `assign_ticket(ticket_id, employee_email)` (open → under_review, one owner), `resolve_ticket(ticket_id, employee_email, outcome, note, recovered_amount=None)` (under_review → resolved/unresolved; money bounded by what is still at risk; updates `Event.human_recovered_amount` and flips the event to `recovered` when nothing is outstanding), `raise_customer_question(event_id, question, channel, employee_email)`. `compute_ticket_metrics(session)` → the `tickets` block. Every human action writes an `agent="human"` audit row. | **done** |
 | `app/agents/ptp.py` | **Promise-to-Pay Tracker (Direction 7).** `record_promise_to_pay()`, `evaluate_ptp_status()`, `compute_ptp_metrics()` — pauses escalation, tracks commitment fulfillment/breaking, computes honor rates. | **done** |
 | `app/agents/audit.py` | Audit Agent. `compute_metrics(session) -> dict` (the MetricsBlock — pure read, what the API returns) + `run(session, *, settings=None) -> list[str]` (writes one `batch_metrics` row on the earliest event). Full-batch metrics + complete honest exception list. Details: `AGENTS_CONTRACT.md` §7/§8. | **done, step 6** |
 | `app/pipeline.py` | `run(database_url=None, *, settings=None) -> dict` chains Detection→Diagnosis→Recovery→Audit over the seeded batch and returns the MetricsBlock; argparse CLI (`--reset`, `--count`, `--seed`, `--json`) with a printed summary. | **done, step 7** |
 | `app/webhooks/__init__.py`, `app/webhooks/listener.py` | Razorpay **test-mode** webhook listener (`POST /webhooks/razorpay`), mounted in `main.py`. `verify_signature(body, signature, secret)` (HMAC-SHA256, constant-time), `razorpay_event_to_eventcreate(event)` (maps `payment.failed` / `payment_link.expired` / `invoice.expired` / `subscription.halted` → `EventCreate`; success/unknown → `None`), `AT_RISK_EVENTS`, `SUCCESS_EVENTS`. Signed → inserts a `detected` event + one `ingested_webhook_event` audit row; the pipeline then runs on it unchanged. Idempotent (dedup by event id). | **done, step 9** |
-| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/events/{id}/similar`, `/api/events/{id}/voice`, `/api/events/{id}/voice/audio`, `/api/events/{id}/sequencer`, `POST /api/events/{id}/ptp`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
+| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/events/{id}/similar`, `/api/events/{id}/voice`, `/api/events/{id}/voice/audio`, `/api/events/{id}/sequencer`, `POST /api/events/{id}/ptp`, **`POST /api/events/{id}/playground/start|message|advance`** (Simulate — sandboxed rehearsal, reads DB never writes), `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
 
 ### 3.4 `backend/tests/`
 
@@ -200,6 +211,8 @@ RAZORPAY BUILDATHON/
 | `test_sequencer.py` | 3 tests — salary window date calculation, rail detection, compliance tags, and multi-step schedule validation. |
 | `test_voice.py` | 5 tests — deterministic offline Hinglish script generation (2); Sarvam TTS: unavailable without key, synthesizes every turn with the right per-speaker voice (mocked `httpx`), degrades on provider error (3). |
 | `test_ptp.py` | 2 tests — promise recording, state transitions (`promised` → `honored`/`broken`), escalation pause, and aggregate PTP metrics. |
+| `test_llm.py` | 8 tests — provider auto-detect priority (anthropic→openrouter→openai), explicit `LLM_PROVIDER` override, `available()` / `model_label()`, `LLMUnavailable` when no key; **`chat_turns()`: available gate, correct multi-turn dispatch, `LLMUnavailable` without key, OpenRouter explicit override.** All offline (monkeypatched). |
+| `test_playground.py` | 26 tests — `pick_channel` mapping (10 params); persona masking (3); deterministic offline fallback: start_session, interactive reaches `resolved`, escalates on fraud dispute, never loops (interactive/auto), auto produces both turns (4); LLM path (monkeypatched): distinct agent prompt with first-turn `role=user` guard, auto mode calls two distinctly-prompted LLMs, disposition varies by root cause, malformed JSON degrades gracefully, raising LLM degrades gracefully (5); **sandboxing guarantee**: interactive + auto sessions each do a DB before/after snapshot — events/tickets/audit_log row counts unchanged (2). All offline — no Postgres needed except the 2 sandboxing tests which use `session`. |
 
 ### 3.5 `frontend/`
 
@@ -215,15 +228,16 @@ RAZORPAY BUILDATHON/
 | `src/App.tsx` | Shell: header + a line that calls `api.health()` and shows the backend status. Placeholder for the dashboard pages. |
 | `src/api/client.ts` | `request<T>()` fetch wrapper (JSON, throws on non-2xx). `api.health()`, `listEvents`, `getAuditTrail`, `getSimilar`, `getVoiceScript`, `getSequencerSchedule`, `recordPTP`, `getMetrics`, `runPipeline`. |
 | `src/api/fixtures.json` | Sample of every API response shape (`events`, `eventAudit`, `pipelineRun`, `metrics`) per `AGENTS_CONTRACT.md` §8. **Regenerated from a real seed-42 pipeline run** (74 events, 40 exceptions). Default data source until `VITE_DATA_SOURCE=live`. |
-| `src/api/types.ts` | TypeScript types for the contract (`EventRead`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, `SimilarCase`, `EventSimilarResponse`, `VoiceScript`, `RetryStep`, `PTPMetrics`, `TicketRead`, `TicketStatus`, `TicketReason`, `TicketMetrics`, `TicketsResponse`, `TicketDetailResponse`, response wrappers). |
-| `src/api/dataSource.ts` | The adapter every page calls: `listEvents` / `getAuditTrail` / `getMetrics` / `getSimilar` / `getVoiceScript` / `getVoiceAudio` / `getSequencerSchedule` / `recordPTP` / `getTickets` / `getTicket` / `assignTicket` / `resolveTicket` / `raiseQuestion` / `runPipeline`. Fixture-mode **tickets are sticky** (in-memory array) so the take→resolve sequence actually demonstrates; event fixtures stay read-only. |
+| `src/api/types.ts` | TypeScript types for the contract (`EventRead` — now includes `customer_name/phone/bank_account/upi_vpa`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, `SimilarCase`, `EventSimilarResponse`, `VoiceScript`, `RetryStep`, `PTPMetrics`, `TicketRead`, `TicketStatus`, `TicketReason`, `TicketMetrics`, `TicketsResponse`, `TicketDetailResponse`, **`PlaygroundStartRequest`, `PlaygroundMessage`, `PlaygroundTurn`, `PlaygroundSession`**, response wrappers). |
+| `src/api/dataSource.ts` | The adapter every page calls: `listEvents` / `getAuditTrail` / `getMetrics` / `getSimilar` / `getVoiceScript` / `getVoiceAudio` / `getSequencerSchedule` / `recordPTP` / `getTickets` / `getTicket` / `assignTicket` / `resolveTicket` / `raiseQuestion` / `runPipeline` / **`playgroundStart`, `playgroundMessage`, `playgroundAdvance`**. Fixture-mode **tickets are sticky** (in-memory array) so the take→resolve sequence actually demonstrates; event fixtures stay read-only. |
 | `src/api/actionLabels.ts` | Plain-business-English labels for agent / status / root cause / intervention / audit action / event type / ticket status / ticket reason, plus `priorityBand(n)` mirroring `triage.PRIORITY_BANDS`. |
-| `src/components/*` | `AppShell`, `Card`, `GlassCard`, `StatTile`, `StatusPill`, `DataTable`, `ChartCard`, `AuditTimeline`, `DetailDrawer`, `SimilarCases` (RAG panel), `VoiceCallDrawer` (Hinglish audio/transcript player + "customer asked something we can't answer" escalation), `PTPModal` (Promise-to-Pay scheduler), `SequencerTimeline` (Mandate retry schedule), `TicketDrawer` (review ticket + case + full trail + actions), `TicketActionModals` (`AssignTicketModal` / `ResolveTicketModal` / `RaiseQuestionModal`), `TicketPills` (`PriorityPill` / `TicketStatusPill`), `ReviewerSignIn`, `Feedback`. |
-| `src/pages/*` | `Overview` (KPI tiles + charts; "Needs a human" tile links to `/attention`, "₹ recovered" splits agents vs humans), `Queue` (at-risk table with PTP badges + deep-linkable decision drawer), `Recovery` (analytics), `Exceptions` (fraud-cluster alert card + exception table + CSV export), `Attention` (priority-ordered human review queue, status/reason filters, `?ticket=` deep-linkable drawer, CSV export). |
+| `src/components/*` | `AppShell` (nav now includes **⚡ Simulate** link), `Card`, `GlassCard`, `StatTile`, `StatusPill`, `DataTable`, `ChartCard`, `AuditTimeline`, `DetailDrawer` (Summary block shows masked contact fields; **"⚡ Simulate" button** opens `SimulateSession`), `SimilarCases` (RAG panel), `VoiceCallDrawer` (Hinglish audio/transcript player + escalation), `PTPModal` (Promise-to-Pay scheduler), `SequencerTimeline` (Mandate retry schedule), `TicketDrawer` (review ticket + case + full trail + actions), `TicketActionModals`, `TicketPills`, `ReviewerSignIn`, `Feedback`, **`SimulateSession`** (interactive/auto chat UI — transcript, channel badge, outcome display, turn-by-turn send or auto-advance). |
+| `src/pages/*` | `Overview` (KPI tiles + charts), `Queue` (at-risk table + decision drawer), `Recovery` (analytics), `Exceptions` (fraud-cluster alert + exception table + CSV export), `Attention` (priority-ordered human review queue), **`Playground`** (case picker page — select a case and mode, then hands off to `SimulateSession`). |
 | `src/lib/*`, `src/charts/series.ts`, `src/hooks/useAsync.ts` | `format.ts` (Indian ₹ grouping), `csv.ts`, `session.ts` (reviewer work-email in `localStorage` — attribution, **not** auth), chart series colours + `PRIORITY_COLOR` / `TICKET_STATUS_COLOR`, async loading hook. |
 | `tsconfig.app.json` | + `resolveJsonModule` (fixtures import). `package.json` + `react-router-dom`. |
 | `tsconfig*.json`, `.oxlintrc.json`, `index.html`, `public/*` | Vite/TS defaults. |
 | `.env.example` | `VITE_API_BASE_URL=` (blank in dev). |
+| `.env` | **`VITE_DATA_SOURCE=live`** — created to fix Sarvam TTS (the missing file caused the data source to default to `"fixtures"`, which never calls the backend). **Edit requires frontend dev-server restart.** Not committed (`.gitignore`). |
 
 ---
 
@@ -264,8 +278,11 @@ RAZORPAY BUILDATHON/
 | POST | `/api/tickets/{ticket_id}/resolve` | `routes.resolve_ticket` | body `{employee_email, outcome, note, recovered_amount?}` → `{status: "ok", ticket: TicketRead}`; 404 unknown, **409** on a guard violation (not under review, bad outcome, empty note, amount above what is still at risk) | **done** |
 | POST | `/api/events/{event_id}/raise-question` | `routes.raise_customer_question` | body `{question, channel?, employee_email?}` → `{status: "ok", ticket: TicketRead}`; 404 unknown event, 422 empty question / bad channel | **done** |
 | POST | `/api/events/{event_id}/ptp` | `routes.record_event_ptp` | `{status: "ok", event: EventRead}` — Schedule Promise-to-Pay date | **done (Direction 7)** |
+| POST | `/api/events/{event_id}/playground/start` | `routes.playground_start` | body `{mode: "interactive"\|"auto"}` → `{mode, channel, ticket_ref, persona, opening_turn, outcome, history}` — opens a sandboxed rehearsal, never writes to store; 404 if unknown event | **done** |
+| POST | `/api/events/{event_id}/playground/message` | `routes.playground_message` | body `{history, message, channel}` → `{turn, outcome, reasoning, history}` — interactive mode: tester's line → agent reply. Stateless (history resent each call) | **done** |
+| POST | `/api/events/{event_id}/playground/advance` | `routes.playground_advance` | body `{history, channel}` → `{customer_turn, agent_turn, outcome, reasoning, history}` — auto mode: one Customer turn + one Agent turn, two distinct LLM calls | **done** |
 | POST | `/api/pipeline/run` | `routes.pipeline_run` | `{metrics: MetricsBlock, ran_at: str}` — query params `reset`, `count`, `seed` | **done** |
-| GET | `/api/metrics` | `routes.get_metrics` | `MetricsBlock` (computed from current DB state, incl. `ptp_metrics`) | **done** |
+| GET | `/api/metrics` | `routes.get_metrics` | `MetricsBlock` (computed from current DB state, incl. `ptp_metrics`). **Playground sessions never affect this value.** | **done** |
 | POST | `/webhooks/razorpay` | `listener.razorpay_webhook` | 503 no secret · 401 bad signature · 200 `{status: accepted\|ignored, …}` | **done, step 9** |
 
 `main.py` mounts `app.api.router` (prefix `/api`). `EventRead` / `AuditRead`
@@ -315,6 +332,10 @@ All are `enum.StrEnum` (members compare/serialize as plain strings).
 | `customer_id` | `str` | — | |
 | `amount` | `Decimal` | — | `NUMERIC(14,2)` — money at risk |
 | `currency` | `str` | `"INR"` | |
+| `customer_name` | `str \| None` | `None` | synthetic full name (Faker). Used as the Playground persona display name. Never real PII. |
+| `customer_phone` | `str \| None` | `None` | synthetic +91 mobile number. Shown **masked** in `DetailDrawer` (last 4 digits visible). |
+| `customer_bank_account` | `str \| None` | `None` | synthetic bank account number. Shown **masked** in `DetailDrawer`. |
+| `customer_upi_vpa` | `str \| None` | `None` | synthetic UPI VPA (e.g. `name@okhdfcbank`). Shown unmasked — not sensitive enough to mask. |
 | `raw_failure_reason` | `str \| None` | `None` | gateway's words, pre-diagnosis |
 | `attempts_so_far` | `int` | `0` | stopping-rule counter |
 | `days_overdue` | `int` | `0` | for B2B invoices |
@@ -517,12 +538,16 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 | `test_rag.py` | 10 | yes (needs pgvector) | vector extension present, degrade path when embeddings off, reference-case seeding idempotent, retrieve filtered by type + sorted, add/nearest round-trip, dedup-on-insert, skip unknown/low-confidence/fraud, bucket-cap trims oldest, `RevRecEmbeddings` wrapper, Diagnosis feeds RAG context into the LLM prompt |
 | `test_api.py` | 12 | yes (needs pgvector) | one module-scoped real pipeline run; `/health`, `/api/events`, `/api/events/{id}/audit` + 404, `MetricsBlock` shape **incl. `ai_recovered + human_recovered == total_recovered`**, `POST /api/pipeline/run`, `/api/events/{id}/similar` + 404; **tickets**: priority-ordered list + status filter + fraud on top, detail carries event + trail + 404, assign→409 double-assign→resolve unresolved with a `human` audit row, resolving with money moves `human_recovered` and leaves `ai_recovered` untouched, guards (409 resolve-before-assign, 404 unknown, 409 over-recovery), `raise-question` opens a `customer_question` ticket + 404/422 |
 | `test_webhooks.py` | 12 | 5 need Postgres | `verify_signature` roundtrip/tamper; `razorpay_event_to_eventcreate` per event type + paise→₹ + non-PII customer key + success/unknown/zero → `None`; endpoint: signed `payment.failed` inserts a `detected` event + `ingested_webhook_event` row, 401 bad signature, 503 no secret, ignores success events, idempotent on redelivery |
-| `test_llm.py` | 5 | no | provider auto-detect priority (anthropic→openrouter→openai), explicit `LLM_PROVIDER` override, `available()` / `model_label()`, `LLMUnavailable` when no key |
+| `test_llm.py` | **8** | no | provider auto-detect priority (anthropic→openrouter→openai), explicit `LLM_PROVIDER` override, `available()` / `model_label()`, `LLMUnavailable` when no key; **`chat_turns()`**: available gate, correct multi-turn dispatch (provider turns, max_tokens), `LLMUnavailable` without a key, OpenRouter explicit-override path |
+| `test_playground.py` | **26** | 2 of 26 need Postgres | `pick_channel` mapping (10 params); persona masks phone/bank, exposes upi_vpa, flags business; offline fallback reaches `resolved`/`escalated`/`halted` in both modes; LLM path (monkeypatched): distinct system prompts, first turn `role=user`, two distinct prompts in auto mode, disposition varies by root cause, malformed JSON degrades, provider error degrades; **sandboxing**: row-count before/after unchanged for interactive + auto full sessions |
+| `test_api.py` | **16** | yes (needs pgvector) | one module-scoped pipeline run; `/health`, `/api/events`, audit + 404, `MetricsBlock` shape incl. `ai_recovered + human_recovered == total_recovered`, pipeline run endpoint, similar + 404; ticket queue: priority-ordered + status filter + fraud on top, detail + 404, assign→resolve with a `human` audit row, money split guards; `raise-question`; **playground**: `start` interactive + auto mode, `message` reaches an outcome, `advance` produces customer+agent turns, **sandboxing: DB row counts + `MetricsBlock` byte-identical before and after a full simulated session** |
 
-Current run against the pgvector container: **146 passed** (`uv run pytest -q`
-from `backend/`; run in chunks on low-RAM boxes — the batch-reseeding pipeline
-tests can OOM a single process). `test_rag.py` / `test_api.py` need pgvector.
-With Postgres stopped: ~30 passed, the rest skipped.
+Current run against the pgvector container: **226 collected** (`uv run pytest -q`
+from `backend/`). New tests: 34 new (26 playground + 8 llm extended) + 4 new API
+playground tests. All 34 new tests pass. Run in chunks on low-RAM boxes — the
+batch-reseeding pipeline tests can OOM a single process. `test_rag.py` /
+`test_api.py` need pgvector.
+With Postgres stopped: ~32 passed, the rest skipped.
 
 ---
 
@@ -541,6 +566,7 @@ With Postgres stopped: ~30 passed, the rest skipped.
 | — | multi-provider LLM (`app/llm.py`) + **RAG knowledge base** (`app/rag.py`, pgvector HNSW) wired into Diagnosis | ✅ done (not a numbered step; plan.md §12) |
 | 9 | `webhooks/listener.py` | ✅ done (`app/webhooks/listener.py`, `POST /webhooks/razorpay`, 12 tests) — signed test-mode Razorpay events → `EventCreate` → same pipeline |
 | 10 | `readme.md` (submission README + "what broke") + `architecture.md` | ✅ done |
+| — | **Simulate / Playground** (`app/agents/playground.py`) + synthetic contact data + Sarvam TTS fix | ✅ done (plan.md §12; 34 new tests) |
 
 **Deviations from CLAUDE.md** (approved by the owner): Postgres instead of
 SQLite; `uv` instead of `pip`/`requirements.txt`; a FastAPI + React monorepo
@@ -569,3 +595,11 @@ SQLite; `uv` instead of `pip`/`requirements.txt`; a FastAPI + React monorepo
   way to apply model changes.
 - `tests/test_store.py::test_reset_db_clears_everything` must `session.close()`
   before `reset_db` — on Postgres a live session's locks block `DROP TABLE`.
+- **Sarvam TTS not working?** The most common cause: `frontend/.env` is missing
+  (it's in `.gitignore`). Create `frontend/.env` with `VITE_DATA_SOURCE=live` and
+  restart the dev server. Also, `get_settings()` is `@lru_cache`d — restart the
+  **backend** after any `.env` edit too.
+- **Simulate / Playground works offline** (no LLM key needed) via the deterministic
+  fallback in `playground.py`. To see live LLM personas, set any LLM key in
+  `backend/.env` and restart the backend.
+
