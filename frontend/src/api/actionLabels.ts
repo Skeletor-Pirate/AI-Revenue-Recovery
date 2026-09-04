@@ -1,14 +1,21 @@
 // Plain-business-English labels — mirror Razorpay's Agent Studio tone (plan.md §11).
 // No ML jargon, no raw enum strings shown to a user.
 
-import type { AgentName, EventStatus, RootCause } from './types'
+import type {
+  AgentName,
+  EventStatus,
+  RootCause,
+  TicketReason,
+  TicketStatus,
+} from './types'
 
 export const AGENT_LABEL: Record<AgentName, string> = {
   detection: 'Detection',
   diagnosis: 'Diagnosis',
   recovery: 'Recovery',
-  triage: 'Fraud triage',
+  triage: 'Triage',
   audit: 'Reporting',
+  human: 'Human reviewer',
 }
 
 export const STATUS_LABEL: Record<EventStatus, string> = {
@@ -58,7 +65,51 @@ export const ACTION_LABEL: Record<string, string> = {
   halted_stopping_rule: 'Stopped — a safety rule was reached',
   marked_recovered: 'Marked recovered',
   batch_metrics: 'Computed batch metrics',
+  opened_review_ticket: 'Opened a review ticket',
+  assigned_review_ticket: 'Taken for human review',
+  resolved_review_ticket: 'Closed by a human reviewer',
+  human_recovered: 'Recovered by a human',
+  raised_customer_question: 'Customer asked something we cannot answer',
+  ptp_recorded: 'Recorded a promise to pay',
+  ptp_honored: 'Promise to pay honoured',
+  ptp_broken: 'Promise to pay broken',
+  ingested_webhook_event: 'Ingested a Razorpay webhook',
 }
+
+// --- human review queue ---
+
+export const TICKET_STATUS_LABEL: Record<TicketStatus, string> = {
+  open: 'Open',
+  under_review: 'Under review',
+  resolved: 'Resolved',
+  unresolved: "Couldn't resolve",
+}
+
+export const TICKET_REASON_LABEL: Record<TicketReason, string> = {
+  suspected_fraud: 'Suspected fraud',
+  customer_question: 'Customer question',
+  awaiting_approval: 'Needs approval',
+  exception_no_error: 'No error on file',
+  invoice_handoff: 'Invoice handoff',
+  stalled_no_response: 'Stalled, no response',
+  other: 'Needs a decision',
+}
+
+/** Priority bands mirror app/agents/triage.PRIORITY_BANDS. */
+export type PriorityBand = 'critical' | 'high' | 'medium' | 'low'
+
+export const priorityBand = (priority: number): PriorityBand =>
+  priority >= 85 ? 'critical' : priority >= 60 ? 'high' : priority >= 40 ? 'medium' : 'low'
+
+export const PRIORITY_BAND_LABEL: Record<PriorityBand, string> = {
+  critical: 'Critical',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+}
+
+export const labelTicketReason = (r: TicketReason): string =>
+  TICKET_REASON_LABEL[r] ?? r.replace(/_/g, ' ')
 
 export const labelAction = (action: string): string =>
   ACTION_LABEL[action] ?? action.replace(/_/g, ' ')

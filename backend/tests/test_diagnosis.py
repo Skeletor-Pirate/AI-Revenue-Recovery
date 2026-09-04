@@ -318,3 +318,69 @@ def test_same_reason_without_signature_not_flagged(session):
     diagnosis.run(session)
     for i in range(3):
         assert store.get_event(session, f"evt_s{i}").status == "diagnosed"
+
+
+def test_velocity_flood_detector_and_run(session):
+    base = datetime.now(timezone.utc) - timedelta(minutes=10)
+    for i in range(5):
+        _insert(
+            session,
+            event_id=f"evt_vf_{i}",
+            customer_id="cust_attacker_1",
+            raw_failure_reason="authentication_failed",
+            created_at=base + timedelta(minutes=i),
+        )
+
+    returned = diagnosis.run(session)
+    for i in range(5):
+        ev = store.get_event(session, f"evt_vf_{i}")
+        assert ev.status == "flagged"
+        assert ev.root_cause == RootCause.SUSPECTED_FRAUD.value
+        trail = store.get_audit_trail(session, f"evt_vf_{i}")
+        assert trail[0].action == "halted_velocity_flood"
+        assert trail[0].payload["signature"]["attempt_count"] == 5
+
+
+def test_micro_probing_detector_and_run(session):
+    base = datetime.now(timezone.utc) - timedelta(minutes=20)
+    for i in range(3):
+        _insert(
+            session,
+            event_id=f"evt_pr_{i}",
+            customer_id="cust_prober_9",
+            amount=Decimal(f"{i + 1}.00"),
+            raw_failure_reason="card_declined",
+            created_at=base + timedelta(minutes=i * 5),
+        )
+
+    returned = diagnosis.run(session)
+    for i in range(3):
+        ev = store.get_event(session, f"evt_pr_{i}")
+        assert ev.status == "flagged"
+        assert ev.root_cause == RootCause.SUSPECTED_FRAUD.value
+        trail = store.get_audit_trail(session, f"evt_pr_{i}")
+        assert trail[0].action == "halted_card_probe"
+        assert trail[0].payload["signature"]["risk_type"] == "micro_transaction_probe"
+
+
+def test_card_hopping_detector_and_run(session):
+    base = datetime.now(timezone.utc) - timedelta(minutes=15)
+    reasons = ["card_declined", "card_number_invalid", "card_limit_exceeded"]
+    for i, r in enumerate(reasons):
+        _insert(
+            session,
+            event_id=f"evt_hop_{i}",
+            customer_id="cust_hopper_x",
+            amount=Decimal("1500.00"),
+            raw_failure_reason=r,
+            created_at=base + timedelta(minutes=i * 3),
+        )
+
+    returned = diagnosis.run(session)
+    for i in range(3):
+        ev = store.get_event(session, f"evt_hop_{i}")
+        assert ev.status == "flagged"
+        assert ev.root_cause == RootCause.SUSPECTED_FRAUD.value
+        trail = store.get_audit_trail(session, f"evt_hop_{i}")
+        assert trail[0].action == "halted_card_hopping"
+        assert trail[0].payload["signature"]["risk_type"] == "card_hopping"

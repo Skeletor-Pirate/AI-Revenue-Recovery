@@ -1,13 +1,18 @@
 """API routes to the frozen response contract (AGENTS_CONTRACT.md §8).
 
-| Method | Path                       | Response                              |
-|--------|----------------------------|---------------------------------------|
-| GET    | /api/events                | {events: EventRead[], count: int}     |
-| GET    | /api/events/{id}/audit     | {event: EventRead, trail: AuditRead[]}|
-| POST   | /api/pipeline/run          | {metrics: MetricsBlock, ran_at: str}  |
-| GET    | /api/metrics               | MetricsBlock                          |
+| Method | Path                        | Response                              |
+|--------|-----------------------------|---------------------------------------|
+| GET    | /api/events                 | {events: EventRead[], count: int}     |
+| GET    | /api/events/{id}/audit      | {event: EventRead, trail: AuditRead[]}|
+| GET    | /api/tickets                | {tickets: TicketRead[], count, ...}   |
+| GET    | /api/tickets/{id}           | {ticket, event, trail}                |
+| POST   | /api/tickets/{id}/assign    | {status: "ok", ticket: TicketRead}    |
+| POST   | /api/tickets/{id}/resolve   | {status: "ok", ticket: TicketRead}    |
+| POST   | /api/pipeline/run           | {metrics: MetricsBlock, ran_at: str}  |
+| GET    | /api/metrics                | MetricsBlock                          |
 
-All persistence via ``app.db.store``; metrics via ``app.agents.audit``.
+All persistence via ``app.db.store``; metrics via ``app.agents.audit``; the
+human review queue via ``app.agents.triage``.
 """
 
 from __future__ import annotations
@@ -20,11 +25,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app import rag
-from app.agents import audit, ptp, sequencer, voice
+from app.agents import audit, ptp, sequencer, triage, voice, voice_tts
 from app.config import get_settings
 from app.data import generate
 from app.db import store
-from app.db.store import AuditRead, EventRead
+from app.db.store import AuditRead, EventRead, TicketRead, TicketStatus
 from app.pipeline import run as run_pipeline
 
 router = APIRouter(prefix="/api", tags=["revenue-recovery"])
@@ -33,6 +38,26 @@ router = APIRouter(prefix="/api", tags=["revenue-recovery"])
 class PTPRequest(BaseModel):
     promised_date: datetime = Field(description="Target date by which customer committed to pay")
     notes: str | None = Field(default=None, description="Optional call notes or conversation summary")
+
+
+class AssignTicketRequest(BaseModel):
+    employee_email: str = Field(description="Email of the employee taking the ticket")
+
+
+class ResolveTicketRequest(BaseModel):
+    employee_email: str = Field(description="Email of the employee closing the ticket")
+    outcome: str = Field(description="'resolved' or 'unresolved' — an honest 'could not fix' is a valid close")
+    note: str = Field(description="What the reviewer actually did; written verbatim into the audit trail")
+    recovered_amount: str | None = Field(
+        default=None,
+        description="Optional money the human brought in; bounded by what is still at risk",
+    )
+
+
+class RaiseQuestionRequest(BaseModel):
+    question: str = Field(description="The customer's question, verbatim")
+    channel: str = Field(default="voice_call", description="voice_call | whatsapp_message | email | dashboard")
+    employee_email: str | None = Field(default=None, description="Who escalated it, if known")
 
 
 @router.get("/events")
@@ -81,6 +106,23 @@ def event_voice_script(event_id: str) -> dict[str, Any]:
         return {"event_id": event_id, "script": script}
 
 
+@router.get("/events/{event_id}/voice/audio")
+def event_voice_audio(event_id: str) -> dict[str, Any]:
+    """Hinglish Voice Recovery: Sarvam AI TTS clips for each dialogue turn.
+
+    ``available: false`` (with ``audio: []``) when no ``SARVAM_API_KEY`` is set or
+    the provider errors — the dashboard then falls back to the browser voice.
+    """
+    settings = get_settings()
+    with store.get_session() as session:
+        event = store.get_event(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        script = voice.generate_hinglish_voice_script(event, settings=settings)
+    tts = voice_tts.synthesize_script(script, settings=settings)
+    return {"event_id": event_id, **tts}
+
+
 @router.get("/events/{event_id}/sequencer")
 def event_retry_sequencer(event_id: str) -> dict[str, Any]:
     """Mandate Retry Sequencer: Multi-step rail-adaptive retry schedule."""
@@ -113,6 +155,115 @@ def record_event_ptp(event_id: str, body: PTPRequest) -> dict[str, Any]:
             }
         except KeyError:
             raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+
+
+# --- human review queue (app/agents/triage.py) -----------------------------
+
+@router.post("/events/{event_id}/raise-question")
+def raise_customer_question(event_id: str, body: RaiseQuestionRequest) -> dict[str, Any]:
+    """Escalate a question the AI cannot answer into the human review queue.
+
+    Called mid-call or from an inbound message when the customer asks something
+    outside what the recovery agent can handle.
+    """
+    with store.get_session() as session:
+        try:
+            ticket = triage.raise_customer_question(
+                session,
+                event_id,
+                question=body.question,
+                channel=body.channel,
+                employee_email=body.employee_email,
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        return {
+            "status": "ok",
+            "ticket": TicketRead.model_validate(ticket, from_attributes=True),
+        }
+
+
+@router.get("/tickets")
+def list_tickets(status: str | None = None) -> dict[str, Any]:
+    """The human review queue, most urgent first (priority desc, then oldest)."""
+    with store.get_session() as session:
+        tickets = store.get_tickets(session, status)
+        rows = [TicketRead.model_validate(t, from_attributes=True) for t in tickets]
+        return {
+            "tickets": rows,
+            "count": len(rows),
+            "open_count": sum(1 for t in tickets if str(t.status) == TicketStatus.OPEN.value),
+            "under_review_count": sum(
+                1 for t in tickets if str(t.status) == TicketStatus.UNDER_REVIEW.value
+            ),
+        }
+
+
+@router.get("/tickets/{ticket_id}")
+def get_ticket(ticket_id: str) -> dict[str, Any]:
+    """One ticket plus everything the reviewer needs: the event and its full trail."""
+    with store.get_session() as session:
+        ticket = store.get_ticket(session, ticket_id)
+        if ticket is None:
+            raise HTTPException(status_code=404, detail=f"no such ticket: {ticket_id}")
+        event = store.get_event(session, ticket.event_id)
+        trail = store.get_audit_trail(session, ticket.event_id)
+        return {
+            "ticket": TicketRead.model_validate(ticket, from_attributes=True),
+            "event": (
+                EventRead.model_validate(event, from_attributes=True)
+                if event is not None
+                else None
+            ),
+            "trail": [AuditRead.model_validate(r, from_attributes=True) for r in trail],
+        }
+
+
+@router.post("/tickets/{ticket_id}/assign")
+def assign_ticket(ticket_id: str, body: AssignTicketRequest) -> dict[str, Any]:
+    """An employee takes a ticket: open -> under_review."""
+    with store.get_session() as session:
+        try:
+            ticket = triage.assign_ticket(
+                session, ticket_id, employee_email=body.employee_email
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"no such ticket: {ticket_id}")
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return {
+            "status": "ok",
+            "ticket": TicketRead.model_validate(ticket, from_attributes=True),
+        }
+
+
+@router.post("/tickets/{ticket_id}/resolve")
+def resolve_ticket(ticket_id: str, body: ResolveTicketRequest) -> dict[str, Any]:
+    """Close a ticket with the reviewer's account of what they did.
+
+    ``outcome`` is ``resolved`` or ``unresolved``; ``recovered_amount`` is
+    optional and bounded by what is still at risk on the event.
+    """
+    with store.get_session() as session:
+        try:
+            ticket = triage.resolve_ticket(
+                session,
+                ticket_id,
+                employee_email=body.employee_email,
+                outcome=body.outcome,
+                note=body.note,
+                recovered_amount=body.recovered_amount,
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"no such ticket: {ticket_id}")
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        return {
+            "status": "ok",
+            "ticket": TicketRead.model_validate(ticket, from_attributes=True),
+        }
 
 
 @router.get("/metrics")

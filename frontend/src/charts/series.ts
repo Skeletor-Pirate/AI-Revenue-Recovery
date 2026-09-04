@@ -38,6 +38,22 @@ export const STATUS_COLOR: Record<EventStatus, string> = {
   flagged: 'var(--color-status-critical)',
 }
 
+// Human-review queue priority bands. Reuses the status palette so "critical"
+// means the same thing here as it does on an event.
+export const PRIORITY_COLOR: Record<string, string> = {
+  critical: 'var(--color-status-critical)',
+  high: 'var(--color-status-serious)',
+  medium: 'var(--color-status-warning)',
+  low: 'var(--color-ink-muted)',
+}
+
+export const TICKET_STATUS_COLOR: Record<string, string> = {
+  open: 'var(--color-status-serious)',
+  under_review: 'var(--color-series-1)',
+  resolved: 'var(--color-status-good)',
+  unresolved: 'var(--color-status-warning)',
+}
+
 export const AXIS = {
   grid: 'var(--color-hairline)',
   baseline: 'var(--color-ink-muted)',

@@ -163,10 +163,7 @@ export function DetailDrawer({
         eventId={caseId}
         isOpen={ptpOpen}
         onClose={() => setPtpOpen(false)}
-        onSuccess={() => {
-          // Re-fetch event audit
-          dataSource.getEventAudit(caseId)
-        }}
+        onSuccess={() => state.reload()}
       />
     </>
   )

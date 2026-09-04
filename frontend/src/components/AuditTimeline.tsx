@@ -11,6 +11,7 @@ const AGENT_CHIP: Record<AgentName, string> = {
   recovery: 'var(--color-series-3)',
   audit: 'var(--color-series-4)',
   triage: 'var(--color-status-critical)',
+  human: 'var(--color-series-6)',
 }
 
 const CRITICAL_ACTIONS = new Set([
@@ -18,11 +19,16 @@ const CRITICAL_ACTIONS = new Set([
   'halted_fraud_cluster',
   'routed_to_exception',
   'awaiting_human_approval',
+  'raised_customer_question',
 ])
 
 function Node({ node, last }: { node: AuditRead; last: boolean }) {
   const [open, setOpen] = useState(false)
-  const critical = node.agent === 'triage' || CRITICAL_ACTIONS.has(node.action)
+  // A human's own actions are never "critical" red -- they are the resolution,
+  // not the alarm.
+  const critical =
+    node.agent !== 'human' &&
+    (node.agent === 'triage' || CRITICAL_ACTIONS.has(node.action))
   const marker = critical ? 'var(--color-status-critical)' : AGENT_CHIP[node.agent]
   const hasPayload =
     node.payload != null &&

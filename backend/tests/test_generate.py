@@ -76,12 +76,23 @@ def test_fraud_cluster_shares_a_tight_signature():
     assert all(r.event_id.startswith(generate.FRAUD_ID_PREFIX) for r in cluster)
 
 
+def test_silent_failures_have_no_error_code_to_reason_from():
+    silent = generate.build_silent_failures(seed=42)
+    assert len(silent) == generate.SILENT_COUNT
+    assert all(r.raw_failure_reason is None for r in silent)
+    assert all(r.event_type == EventType.FAILED_PAYMENT for r in silent)
+    assert all(r.event_id.startswith(generate.SILENT_ID_PREFIX) for r in silent)
+
+
 def test_generate_seeds_database(session, test_database_url):
     ids = generate.generate(
         count=20, seed=5, reset=False, database_url=test_database_url
     )
     rows = store.all_events(session)
-    assert len(rows) == len(ids) == 24  # 20 + 4 fraud
+    assert len(rows) == len(ids) == 20 + 4 + generate.SILENT_COUNT
     detected = store.get_events_by_status(session, "detected")
     fraud = [e.event_id for e in detected if e.event_id.startswith(generate.FRAUD_ID_PREFIX)]
     assert len(fraud) == 4
+    silent = [e for e in detected if e.event_id.startswith(generate.SILENT_ID_PREFIX)]
+    assert len(silent) == generate.SILENT_COUNT
+    assert all(e.raw_failure_reason is None for e in silent)

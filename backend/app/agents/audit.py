@@ -24,7 +24,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.db import store
-from app.db.store import Agent, EventStatus, MONEY, RootCause
+from app.db.store import Agent, EventStatus, MONEY, RootCause, TicketReason
 
 _ZERO = Decimal("0.00")
 
@@ -49,6 +49,8 @@ def _empty_block() -> dict[str, Any]:
     return {
         "total_at_risk": "0.00",
         "total_recovered": "0.00",
+        "ai_recovered": "0.00",
+        "human_recovered": "0.00",
         "overall_recovery_rate": 0.0,
         "event_count": 0,
         "by_root_cause": [],
@@ -64,6 +66,18 @@ def _empty_block() -> dict[str, Any]:
             "active_promised": 0,
             "honor_rate": 0.0,
             "amount_recovered_ptp": "0.00",
+        },
+        "tickets": {
+            "total": 0,
+            "open": 0,
+            "under_review": 0,
+            "resolved": 0,
+            "unresolved": 0,
+            "needs_attention": 0,
+            "by_reason": {r.value: 0 for r in TicketReason},
+            "oldest_open_hours": 0.0,
+            "resolution_rate": 0.0,
+            "human_recovered": "0.00",
         },
     }
 
@@ -117,6 +131,12 @@ def compute_metrics(session: store.Session) -> dict[str, Any]:
 
     total_at_risk = sum((e.amount for e in events), _ZERO)
     total_recovered = sum((e.recovered_amount for e in events), _ZERO)
+    # Split the credit honestly: money a human brought in by working a review
+    # ticket is not money the automation recovered.
+    human_recovered = sum(
+        (Decimal(e.human_recovered_amount or 0) for e in events), _ZERO
+    )
+    ai_recovered = total_recovered - human_recovered
 
     # --- status breakdown (all six keys, 0-filled) ---
     status_breakdown = {s.value: 0 for s in EventStatus}
@@ -218,10 +238,13 @@ def compute_metrics(session: store.Session) -> dict[str, Any]:
             break
 
     from app.agents.ptp import compute_ptp_metrics
+    from app.agents.triage import compute_ticket_metrics
 
     return {
         "total_at_risk": _money(total_at_risk),
         "total_recovered": _money(total_recovered),
+        "ai_recovered": _money(ai_recovered),
+        "human_recovered": _money(human_recovered),
         "overall_recovery_rate": _rate(total_recovered, total_at_risk),
         "event_count": len(events),
         "by_root_cause": by_root_cause,
@@ -231,6 +254,7 @@ def compute_metrics(session: store.Session) -> dict[str, Any]:
         "exceptions": exceptions,
         "fraud_cluster": {"flagged_event_ids": flagged_ids, "reason": fraud_reason},
         "ptp_metrics": compute_ptp_metrics(session),
+        "tickets": compute_ticket_metrics(session),
     }
 
 
@@ -258,7 +282,10 @@ def run(session: store.Session, *, settings: Any = None) -> list[str]:
             f"Rs {metrics['total_at_risk']} at risk "
             f"(overall {metrics['overall_recovery_rate']}); "
             f"{len(metrics['exceptions'])} exception(s), "
-            f"{flagged} flagged for fraud review."
+            f"{flagged} flagged for fraud review; "
+            f"Rs {metrics['human_recovered']} of the total was recovered by a "
+            f"human reviewer, and {metrics['tickets']['needs_attention']} "
+            f"ticket(s) still await human attention."
         ),
         payload=metrics,
     )

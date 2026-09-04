@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { dataSource } from '../api/dataSource'
 import { useAsync } from '../hooks/useAsync'
-import type { VoiceScript } from '../api/types'
+import { RaiseQuestionModal } from './TicketActionModals'
+import { getEmployeeEmail } from '../lib/session'
+import type { VoiceScript, VoiceAudioClip } from '../api/types'
 
 interface Props {
   eventId: string
@@ -19,36 +21,81 @@ export const VoiceCallDrawer: React.FC<Props> = ({ eventId, isOpen, onClose }) =
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTurn, setCurrentTurn] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
+  const [voiceMode, setVoiceMode] = useState<'sarvam' | 'browser' | null>(null)
+  const [questionOpen, setQuestionOpen] = useState(false)
+  const [raisedTicket, setRaisedTicket] = useState<string | null>(null)
+
+  const audioElRef = useRef<HTMLAudioElement | null>(null)
+  const clipsRef = useRef<VoiceAudioClip[] | null>(null)
+  const stoppedRef = useRef(false)
+
+  const stopPlayback = () => {
+    stoppedRef.current = true
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+    if (audioElRef.current) {
+      audioElRef.current.pause()
+      audioElRef.current.src = ''
+      audioElRef.current = null
+    }
+    setIsPlaying(false)
+    setCurrentTurn(null)
+  }
 
   useEffect(() => {
     return () => {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel()
+      stoppedRef.current = true
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+      if (audioElRef.current) {
+        audioElRef.current.pause()
+        audioElRef.current = null
       }
     }
   }, [])
 
-  const handlePlayAudio = () => {
-    if (!('speechSynthesis' in window) || !scriptData) return
+  const handleClose = () => {
+    stopPlayback()
+    clipsRef.current = null
+    setVoiceMode(null)
+    onClose()
+  }
 
-    if (isPlaying) {
-      window.speechSynthesis.cancel()
-      setIsPlaying(false)
-      setCurrentTurn(null)
-      return
-    }
-
-    setIsPlaying(true)
-    const turns = scriptData.dialogue_turns
-    let index = 0
-
-    const speakNext = () => {
-      if (index >= turns.length) {
+  const playSarvamClips = (clips: VoiceAudioClip[]) => {
+    setVoiceMode('sarvam')
+    let i = 0
+    const next = () => {
+      if (stoppedRef.current || i >= clips.length) {
         setIsPlaying(false)
         setCurrentTurn(null)
         return
       }
+      const clip = clips[i]
+      setCurrentTurn(clip.index)
+      const el = new Audio(`data:audio/wav;base64,${clip.audio_base64}`)
+      audioElRef.current = el
+      el.onended = () => {
+        i++
+        next()
+      }
+      el.onerror = () => stopPlayback()
+      el.play().catch(() => stopPlayback())
+    }
+    next()
+  }
 
+  const playBrowserVoice = () => {
+    if (!('speechSynthesis' in window) || !scriptData) {
+      setIsPlaying(false)
+      return
+    }
+    setVoiceMode('browser')
+    const turns = scriptData.dialogue_turns
+    let index = 0
+    const speakNext = () => {
+      if (stoppedRef.current || index >= turns.length) {
+        setIsPlaying(false)
+        setCurrentTurn(null)
+        return
+      }
       setCurrentTurn(index)
       const turn = turns[index]
       const utterance = new SpeechSynthesisUtterance(turn.text)
@@ -58,14 +105,37 @@ export const VoiceCallDrawer: React.FC<Props> = ({ eventId, isOpen, onClose }) =
         index++
         speakNext()
       }
-      utterance.onerror = () => {
-        setIsPlaying(false)
-        setCurrentTurn(null)
-      }
+      utterance.onerror = () => stopPlayback()
       window.speechSynthesis.speak(utterance)
     }
-
     speakNext()
+  }
+
+  const handlePlayAudio = async () => {
+    if (!scriptData) return
+    if (isPlaying) {
+      stopPlayback()
+      return
+    }
+
+    stoppedRef.current = false
+    setIsPlaying(true)
+
+    try {
+      if (!clipsRef.current) {
+        const res = await dataSource.getVoiceAudio(eventId)
+        clipsRef.current = res.available ? res.audio : []
+      }
+    } catch {
+      clipsRef.current = []
+    }
+
+    if (stoppedRef.current) return
+    if (clipsRef.current && clipsRef.current.length > 0) {
+      playSarvamClips(clipsRef.current)
+    } else {
+      playBrowserVoice()
+    }
   }
 
   const handleCopyWhatsApp = () => {
@@ -96,7 +166,7 @@ export const VoiceCallDrawer: React.FC<Props> = ({ eventId, isOpen, onClose }) =
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-slate-400 hover:text-white p-1 rounded-md hover:bg-slate-800"
           >
             ✕
@@ -118,6 +188,13 @@ export const VoiceCallDrawer: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                 <p className="text-[11px] text-slate-400">
                   Natural Code-Switched Hindi/English Call
                 </p>
+                {voiceMode && (
+                  <p className="text-[10px] mt-1 text-slate-500">
+                    {voiceMode === 'sarvam'
+                      ? '🔊 Sarvam AI (bulbul) neural voice'
+                      : '🔉 Browser fallback voice — set SARVAM_API_KEY for neural TTS'}
+                  </p>
+                )}
               </div>
               <button
                 onClick={handlePlayAudio}
@@ -183,6 +260,32 @@ export const VoiceCallDrawer: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                 {scriptData.whatsapp_followup_hinglish}
               </p>
             </div>
+
+            {/* The AI stops where it should: a question it cannot answer goes
+                to a person rather than getting improvised on the call. */}
+            <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/50">
+              {raisedTicket ? (
+                <p className="text-xs text-slate-300">
+                  Handed to a human as{' '}
+                  <span className="font-mono text-white">{raisedTicket}</span>. It
+                  is now near the top of the review queue.
+                </p>
+              ) : (
+                <>
+                  <p className="text-[11px] text-slate-400 mb-2">
+                    If the customer asks something outside this script, don&apos;t
+                    improvise — hand it to a person.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setQuestionOpen(true)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-900 text-slate-200 border border-slate-700"
+                  >
+                    Customer asked something we can&apos;t answer
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ) : (
           <div className="text-center py-12 text-slate-400 text-sm">
@@ -190,6 +293,15 @@ export const VoiceCallDrawer: React.FC<Props> = ({ eventId, isOpen, onClose }) =
           </div>
         )}
       </div>
+
+      <RaiseQuestionModal
+        eventId={eventId}
+        employeeEmail={getEmployeeEmail()}
+        channel="voice_call"
+        isOpen={questionOpen}
+        onClose={() => setQuestionOpen(false)}
+        onSuccess={setRaisedTicket}
+      />
     </div>
   )
 }

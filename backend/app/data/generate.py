@@ -1,9 +1,14 @@
 """Synthetic at-risk-revenue batch generator (CLAUDE.md Section 7).
 
 Produces a deterministic batch of 50-100 events across all four EventTypes,
-seeded into Postgres through the validated `store.insert_event` path, plus a
-deliberate small fraud-like cluster (CLAUDE.md Section 6) that the Diagnosis
-Agent's triage check is meant to catch.
+seeded into Postgres through the validated `store.insert_event` path, plus two
+deliberate awkward cases:
+
+* a small fraud-like cluster (CLAUDE.md Section 6) the Diagnosis Agent's triage
+  check is meant to catch, and
+* a couple of "silent failures" -- charges that failed with no gateway error
+  code at all, which end as honest exceptions and land in the human review
+  queue (`build_silent_failures`).
 
 Failure reasons are real Razorpay error codes (razorpay.com/docs/errors), not
 invented ones.
@@ -87,6 +92,12 @@ FRAUD_REASON = "card_declined"
 FRAUD_AMOUNT_LOW = Decimal("4980")
 FRAUD_AMOUNT_HIGH = Decimal("5020")
 FRAUD_ID_PREFIX = "fraud_"
+
+# "silent failure" shape -- a charge that failed with NO gateway error code.
+# Real and awkward: the classifier has nothing to reason from, so the case ends
+# as an honest exception and Triage routes it to a human (`exception_no_error`).
+SILENT_ID_PREFIX = "silent_"
+SILENT_COUNT = 2
 
 
 def _money(value: float) -> Decimal:
@@ -172,6 +183,38 @@ def build_fraud_cluster(size: int = 4, seed: int = 42) -> list[EventCreate]:
     ]
 
 
+def build_silent_failures(
+    size: int = SILENT_COUNT, seed: int = 42
+) -> list[EventCreate]:
+    """Failed payments the gateway gave us **no error code** for.
+
+    Nothing invented here -- gateways really do return a bare failure with no
+    usable reason. The pipeline handles it honestly: Detection finds no failure
+    signal, so the case becomes an `exception` with no root cause, and the
+    Triage agent opens an `exception_no_error` ticket because a human is the
+    only one who can find out what happened.
+    """
+    rng = random.Random(seed + 2)
+    fake = Faker()
+    fake.seed_instance(seed + 2)
+
+    span_start = _epoch() - timedelta(days=BATCH_SPAN_DAYS)
+    span_seconds = BATCH_SPAN_DAYS * 24 * 3600
+    return [
+        EventCreate(
+            event_id=f"{SILENT_ID_PREFIX}{i:02d}",
+            event_type=EventType.FAILED_PAYMENT,
+            customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
+            amount=_rupees(rng),
+            raw_failure_reason=None,          # the whole point
+            attempts_so_far=rng.randint(1, 2),
+            days_overdue=0,
+            created_at=span_start + timedelta(seconds=rng.uniform(0, span_seconds)),
+        )
+        for i in range(size)
+    ]
+
+
 def _to_frame(records: list[EventCreate]) -> pd.DataFrame:
     return pd.DataFrame(r.model_dump() for r in records)
 
@@ -184,7 +227,11 @@ def generate(
 ) -> list[str]:
     """Build the full batch, seed it into Postgres, dump a CSV. Returns the
     inserted event_ids. `database_url` overrides the target DB (used by tests)."""
-    records = build_batch(count, seed) + build_fraud_cluster(seed=seed)
+    records = (
+        build_batch(count, seed)
+        + build_fraud_cluster(seed=seed)
+        + build_silent_failures(seed=seed)
+    )
 
     if reset:
         store.reset_db(database_url)
@@ -203,10 +250,12 @@ def _summary(records: list[EventCreate]) -> str:
     by_type = Counter(r.event_type for r in records)
     total = sum((r.amount for r in records), Decimal("0"))
     fraud = [r.event_id for r in records if r.event_id.startswith(FRAUD_ID_PREFIX)]
+    silent = [r.event_id for r in records if r.event_id.startswith(SILENT_ID_PREFIX)]
     lines = [
         f"{len(records)} events, total at risk Rs {total:,.2f}",
         *(f"  {etype:<20} {n}" for etype, n in sorted(by_type.items())),
         f"  fraud cluster: {fraud}",
+        f"  silent failures (no error code): {silent}",
     ]
     return "\n".join(lines)
 
@@ -221,7 +270,11 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    records = build_batch(args.count, args.seed) + build_fraud_cluster(seed=args.seed)
+    records = (
+        build_batch(args.count, args.seed)
+        + build_fraud_cluster(seed=args.seed)
+        + build_silent_failures(seed=args.seed)
+    )
     print(_summary(records))
     generate(args.count, args.seed, args.reset)
     print(f"seeded -> {store.DEFAULT_DATABASE_URL}")

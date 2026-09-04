@@ -68,6 +68,8 @@ _REASON_MAP: dict[str, tuple[RootCause, float]] = {
 }
 
 # fallback when there is no gateway reason at all
+# In simple layman terms, a Gateway Reason is the official error message sent 
+# back by the Payment Gateway (Razorpay) or Bank explaining why a transaction failed.
 _TYPE_MAP: dict[str, tuple[RootCause, float]] = {
     "abandoned_checkout": (RootCause.CHECKOUT_ABANDONED, 0.85),
     "overdue_invoice": (RootCause.INVOICE_FORGOTTEN, 0.85),
@@ -85,10 +87,30 @@ _FRAUD_MIN_EVENTS = 3
 _FRAUD_MIN_CUSTOMERS = 3
 _CLUSTER_STATUSES = {EventStatus.DETECTED.value, EventStatus.DIAGNOSED.value}
 
+# Multi-signal velocity and risk thresholds
+_VELOCITY_WINDOW = timedelta(minutes=15)
+_VELOCITY_MIN_ATTEMPTS = 5
+
+_PROBE_MAX_AMOUNT = Decimal("10.00")
+_PROBE_WINDOW = timedelta(minutes=30)
+_PROBE_MIN_ATTEMPTS = 3
+
+_CARD_HOP_WINDOW = timedelta(minutes=30)
+_CARD_HOP_MIN_ATTEMPTS = 3
+_CARD_DECLINE_REASONS = {
+    "card_declined",
+    "card_number_invalid",
+    "card_limit_exceeded",
+    "card_disabled_for_online_payments",
+}
+
 DIAGNOSIS_ACTIONS = {
     "classified_root_cause",
     "llm_classified_root_cause",
     "halted_fraud_cluster",
+    "halted_velocity_flood",
+    "halted_card_probe",
+    "halted_card_hopping",
 }
 
 _SYSTEM_PROMPT = (
@@ -219,6 +241,156 @@ def find_fraud_clusters(events: list[Any]) -> list[dict[str, Any]]:
     return clusters
 
 
+def find_velocity_floods(events: list[Any]) -> list[dict[str, Any]]:
+    """Detect rapid brute-force transaction flooding from a single customer ID.
+
+    Identifies customers attempting >= _VELOCITY_MIN_ATTEMPTS failed transactions
+    within a rolling _VELOCITY_WINDOW (15 minutes).
+    """
+    by_cust: dict[str, list[Any]] = {}
+    for e in events:
+        if str(e.status) not in _CLUSTER_STATUSES:
+            continue
+        if not e.customer_id or e.customer_id.endswith("unknown"):
+            continue
+        by_cust.setdefault(e.customer_id, []).append(e)
+
+    results: list[dict[str, Any]] = []
+    for cid, group in by_cust.items():
+        if len(group) < _VELOCITY_MIN_ATTEMPTS:
+            continue
+        group = sorted(group, key=lambda e: _aware(e.created_at))
+        n = len(group)
+        match: list[Any] | None = None
+        for i in range(n):
+            for j in range(n, i + _VELOCITY_MIN_ATTEMPTS - 1, -1):
+                window = group[i:j]
+                if len(window) < _VELOCITY_MIN_ATTEMPTS:
+                    continue
+                times = [_aware(e.created_at) for e in window]
+                if max(times) - min(times) <= _VELOCITY_WINDOW:
+                    match = window
+                    break
+            if match is not None:
+                break
+        if match is not None:
+            times = [_aware(e.created_at) for e in match]
+            window_mins = int(round((max(times) - min(times)).total_seconds() / 60))
+            results.append({
+                "members": match,
+                "signature": {
+                    "customer_id": cid,
+                    "attempt_count": len(match),
+                    "window_minutes": window_mins,
+                    "risk_type": "velocity_flood",
+                },
+            })
+    return results
+
+
+def find_probing_attacks(events: list[Any]) -> list[dict[str, Any]]:
+    """Detect card-testing micro-transaction probes (<= Rs 10.00).
+
+    Identifies customers testing >= _PROBE_MIN_ATTEMPTS small amounts
+    within a rolling _PROBE_WINDOW (30 minutes).
+    """
+    by_cust: dict[str, list[Any]] = {}
+    for e in events:
+        if str(e.status) not in _CLUSTER_STATUSES:
+            continue
+        if _dec(e.amount) > _PROBE_MAX_AMOUNT:
+            continue
+        if not e.customer_id or e.customer_id.endswith("unknown"):
+            continue
+        by_cust.setdefault(e.customer_id, []).append(e)
+
+    results: list[dict[str, Any]] = []
+    for cid, group in by_cust.items():
+        if len(group) < _PROBE_MIN_ATTEMPTS:
+            continue
+        group = sorted(group, key=lambda e: _aware(e.created_at))
+        n = len(group)
+        match: list[Any] | None = None
+        for i in range(n):
+            for j in range(n, i + _PROBE_MIN_ATTEMPTS - 1, -1):
+                window = group[i:j]
+                if len(window) < _PROBE_MIN_ATTEMPTS:
+                    continue
+                times = [_aware(e.created_at) for e in window]
+                if max(times) - min(times) <= _PROBE_WINDOW:
+                    match = window
+                    break
+            if match is not None:
+                break
+        if match is not None:
+            amounts = [_dec(e.amount).quantize(MONEY) for e in match]
+            times = [_aware(e.created_at) for e in match]
+            window_mins = int(round((max(times) - min(times)).total_seconds() / 60))
+            results.append({
+                "members": match,
+                "signature": {
+                    "customer_id": cid,
+                    "attempt_count": len(match),
+                    "max_amount": str(max(amounts)),
+                    "window_minutes": window_mins,
+                    "risk_type": "micro_transaction_probe",
+                },
+            })
+    return results
+
+
+def find_card_hopping(events: list[Any]) -> list[dict[str, Any]]:
+    """Detect attackers cycling through stolen cards (repeated card declines).
+
+    Identifies customers failing >= _CARD_HOP_MIN_ATTEMPTS times with card decline
+    reasons within a rolling _CARD_HOP_WINDOW (30 minutes).
+    """
+    by_cust: dict[str, list[Any]] = {}
+    for e in events:
+        if str(e.status) not in _CLUSTER_STATUSES:
+            continue
+        reason = (e.raw_failure_reason or "").lower().strip()
+        if reason not in _CARD_DECLINE_REASONS:
+            continue
+        if not e.customer_id or e.customer_id.endswith("unknown"):
+            continue
+        by_cust.setdefault(e.customer_id, []).append(e)
+
+    results: list[dict[str, Any]] = []
+    for cid, group in by_cust.items():
+        if len(group) < _CARD_HOP_MIN_ATTEMPTS:
+            continue
+        group = sorted(group, key=lambda e: _aware(e.created_at))
+        n = len(group)
+        match: list[Any] | None = None
+        for i in range(n):
+            for j in range(n, i + _CARD_HOP_MIN_ATTEMPTS - 1, -1):
+                window = group[i:j]
+                if len(window) < _CARD_HOP_MIN_ATTEMPTS:
+                    continue
+                times = [_aware(e.created_at) for e in window]
+                if max(times) - min(times) <= _CARD_HOP_WINDOW:
+                    match = window
+                    break
+            if match is not None:
+                break
+        if match is not None:
+            times = [_aware(e.created_at) for e in match]
+            reasons = [e.raw_failure_reason for e in match]
+            window_mins = int(round((max(times) - min(times)).total_seconds() / 60))
+            results.append({
+                "members": match,
+                "signature": {
+                    "customer_id": cid,
+                    "attempt_count": len(match),
+                    "reasons": sorted(list(set(reasons))),
+                    "window_minutes": window_mins,
+                    "risk_type": "card_hopping",
+                },
+            })
+    return results
+
+
 # --- Claude fallback (isolated; monkeypatched in tests) --------------------
 
 def _extract_json(text: str) -> str:
@@ -307,6 +479,30 @@ def _fraud_reasoning(event: Any, sig: dict[str, Any]) -> str:
     )
 
 
+def _velocity_reasoning(event: Any, sig: dict[str, Any]) -> str:
+    return (
+        f"Event {event.event_id} flagged for velocity flooding: customer "
+        f"{sig['customer_id']} initiated {sig['attempt_count']} failed transactions "
+        f"in ~{sig['window_minutes']} minutes. Halting to prevent brute-force abuse."
+    )
+
+
+def _probe_reasoning(event: Any, sig: dict[str, Any]) -> str:
+    return (
+        f"Event {event.event_id} flagged for card-testing probe: customer "
+        f"{sig['customer_id']} initiated {sig['attempt_count']} micro-transactions "
+        f"(max {sig['max_amount']} INR) in ~{sig['window_minutes']} minutes. Halting."
+    )
+
+
+def _hopping_reasoning(event: Any, sig: dict[str, Any]) -> str:
+    return (
+        f"Event {event.event_id} flagged for card-hopping sweep: customer "
+        f"{sig['customer_id']} accumulated {sig['attempt_count']} consecutive card "
+        f"declines in ~{sig['window_minutes']} minutes. Halting."
+    )
+
+
 def run(session: store.Session, *, settings: Any = None) -> list[str]:
     """Diagnose every event at ``status="detected"``.
 
@@ -324,7 +520,8 @@ def run(session: store.Session, *, settings: Any = None) -> list[str]:
     flagged: set[str] = set()
     diagnosed: set[str] = set()
 
-    # 1. fraud-cluster triage
+    # 1. Multi-signal fraud triage
+    # 1a. Multi-customer temporal cluster
     for cluster in find_fraud_clusters(ordered):
         sig = cluster["signature"]
         member_ids = sorted(
@@ -346,6 +543,84 @@ def run(session: store.Session, *, settings: Any = None) -> list[str]:
                 agent=Agent.TRIAGE,
                 action="halted_fraud_cluster",
                 reasoning=_fraud_reasoning(member, sig),
+                payload={"signature": sig, "cluster_event_ids": member_ids},
+            )
+            flagged.add(member.event_id)
+
+    # 1b. Single-customer velocity floods
+    for cluster in find_velocity_floods(ordered):
+        sig = cluster["signature"]
+        member_ids = sorted(
+            (e.event_id for e in cluster["members"]),
+            key=lambda eid: order_index.get(eid, 0),
+        )
+        for member in cluster["members"]:
+            if member.event_id in flagged or str(member.status) not in _CLUSTER_STATUSES:
+                continue
+            store.update_event(
+                session,
+                member.event_id,
+                status=EventStatus.FLAGGED,
+                root_cause=RootCause.SUSPECTED_FRAUD,
+            )
+            store.log_action(
+                session,
+                event_id=member.event_id,
+                agent=Agent.TRIAGE,
+                action="halted_velocity_flood",
+                reasoning=_velocity_reasoning(member, sig),
+                payload={"signature": sig, "cluster_event_ids": member_ids},
+            )
+            flagged.add(member.event_id)
+
+    # 1c. Micro-transaction probing attacks
+    for cluster in find_probing_attacks(ordered):
+        sig = cluster["signature"]
+        member_ids = sorted(
+            (e.event_id for e in cluster["members"]),
+            key=lambda eid: order_index.get(eid, 0),
+        )
+        for member in cluster["members"]:
+            if member.event_id in flagged or str(member.status) not in _CLUSTER_STATUSES:
+                continue
+            store.update_event(
+                session,
+                member.event_id,
+                status=EventStatus.FLAGGED,
+                root_cause=RootCause.SUSPECTED_FRAUD,
+            )
+            store.log_action(
+                session,
+                event_id=member.event_id,
+                agent=Agent.TRIAGE,
+                action="halted_card_probe",
+                reasoning=_probe_reasoning(member, sig),
+                payload={"signature": sig, "cluster_event_ids": member_ids},
+            )
+            flagged.add(member.event_id)
+
+    # 1d. Multi-card identity hopping
+    for cluster in find_card_hopping(ordered):
+        sig = cluster["signature"]
+        member_ids = sorted(
+            (e.event_id for e in cluster["members"]),
+            key=lambda eid: order_index.get(eid, 0),
+        )
+        for member in cluster["members"]:
+            if member.event_id in flagged or str(member.status) not in _CLUSTER_STATUSES:
+                continue
+            store.update_event(
+                session,
+                member.event_id,
+                status=EventStatus.FLAGGED,
+                root_cause=RootCause.SUSPECTED_FRAUD,
+            )
+            store.log_action(
+                session,
+                event_id=member.event_id,
+                agent=Agent.TRIAGE,
+                action="halted_card_hopping",
+                reasoning=_hopping_reasoning(member, sig),
                 payload={"signature": sig, "cluster_event_ids": member_ids},
             )
             flagged.add(member.event_id)

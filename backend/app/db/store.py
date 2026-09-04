@@ -6,15 +6,17 @@ IS the audit trail the buildathon brief requires: every money-related agent
 action is written here via `log_action()` as it happens.
 
 Schema mirrors CLAUDE.md Section 5. Controlled vocabularies live here as
-`StrEnum`s: `EventType`, `EventStatus`, `Agent`, and `RootCause` (the
-Diagnosis Agent's output vocabulary, one intervention each -- see
-backend/app/agents/AGENTS_CONTRACT.md).
+`StrEnum`s: `EventType`, `EventStatus`, `Agent`, `RootCause` (the Diagnosis
+Agent's output vocabulary, one intervention each -- see
+backend/app/agents/AGENTS_CONTRACT.md), and `TicketStatus` / `TicketReason`
+(the human-review queue -- see app/agents/triage.py).
 Stack: SQLModel (SQLAlchemy + Pydantic) on PostgreSQL 16, psycopg 3 driver.
 
 Two layers of models:
-  * table models   (`Event`, `AuditLog`)          -- persistence only
+  * table models   (`Event`, `AuditLog`, `Ticket`) -- persistence only
   * schema models  (`EventCreate` / `EventUpdate` / `EventRead`, `AuditCreate` /
-                    `AuditRead`)                   -- Pydantic validation +
+                    `AuditRead`, `TicketCreate` / `TicketUpdate` /
+                    `TicketRead`)                  -- Pydantic validation +
                     the request/response shapes the FastAPI layer reuses
 """
 
@@ -95,6 +97,37 @@ class Agent(StrEnum):
     RECOVERY = "recovery"
     TRIAGE = "triage"        # the fraud-cluster check; can force status -> flagged
     AUDIT = "audit"
+    HUMAN = "human"          # a real employee acting on a review ticket
+
+
+class TicketStatus(StrEnum):
+    """Human-review ticket lifecycle (app/agents/triage.py).
+
+    open -> under_review (an employee took it) -> resolved | unresolved.
+    A ticket never reopens; a re-run of the pipeline will not touch a
+    ticket that already exists for an event.
+    """
+
+    OPEN = "open"
+    UNDER_REVIEW = "under_review"
+    RESOLVED = "resolved"
+    UNRESOLVED = "unresolved"
+
+
+class TicketReason(StrEnum):
+    """Why the automation handed this case to a person.
+
+    Ordered here roughly by urgency; the numeric priority score lives in
+    `app/agents/triage.PRIORITY_BASE`.
+    """
+
+    SUSPECTED_FRAUD = "suspected_fraud"          # triage halted a matching-signature cluster
+    CUSTOMER_QUESTION = "customer_question"      # asked something the AI cannot answer
+    AWAITING_APPROVAL = "awaiting_approval"      # money action above the human-approval gate
+    EXCEPTION_NO_ERROR = "exception_no_error"    # failed with no gateway error to reason from
+    INVOICE_HANDOFF = "invoice_handoff"          # escalation ladder reached human handoff
+    STALLED_NO_RESPONSE = "stalled_no_response"  # stopping rule hit; customer never responded
+    OTHER = "other"
 
 
 class RootCause(StrEnum):
@@ -149,6 +182,12 @@ class Event(SQLModel, table=True):
     recovered_amount: Decimal = Field(
         default=Decimal("0"), max_digits=14, decimal_places=2
     )
+    # Of `recovered_amount`, how much a human brought in by resolving a review
+    # ticket. AI-recovered is the difference. Keeps the honest split the
+    # dashboard reports (audit.compute_metrics -> ai_recovered / human_recovered).
+    human_recovered_amount: Decimal = Field(
+        default=Decimal("0"), max_digits=14, decimal_places=2
+    )
     promised_date: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
@@ -171,6 +210,44 @@ class AuditLog(SQLModel, table=True):
         default=None, sa_column=Column(JSONB)
     )
     timestamp: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+
+
+class Ticket(SQLModel, table=True):
+    """One unit of work for a human reviewer.
+
+    Opened by the Triage agent for every event the automation could not carry
+    further (`flagged` / `exception`), and raised live when a customer asks
+    something the AI cannot answer on a call or in a message. The queue is
+    ordered by `priority` (higher = more urgent), so a suspected-fraud cluster
+    always outranks a case that merely ran out of retries.
+    """
+
+    __tablename__ = "tickets"
+
+    ticket_id: str = Field(primary_key=True)          # 'tkt_0001'
+    event_id: str = Field(foreign_key="events.event_id", index=True)
+    reason: str = Field(index=True)                   # TicketReason
+    priority: int = Field(default=0, index=True)      # higher = more urgent
+    status: str = Field(default=TicketStatus.OPEN, index=True)
+    summary: str                                      # one-line "why a human is needed"
+    detail: str | None = None                         # e.g. the verbatim customer question
+    assigned_employee_email: str | None = None
+    assigned_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    resolution_note: str | None = None                # what the human actually did
+    resolution_outcome: str | None = None             # 'resolved' | 'unresolved'
+    recovered_amount: Decimal = Field(                # money this resolution brought in
+        default=Decimal("0"), max_digits=14, decimal_places=2
+    )
+    created_at: datetime = Field(
+        default_factory=_utcnow,
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+    )
+    updated_at: datetime = Field(
         default_factory=_utcnow,
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
@@ -270,11 +347,14 @@ class EventUpdate(SQLModel):
     root_cause: RootCause | None = None
     diagnosis_confidence: float | None = Field(default=None, ge=0, le=1)
     recovered_amount: Decimal | None = Field(default=None, ge=0, max_digits=14)
+    human_recovered_amount: Decimal | None = Field(
+        default=None, ge=0, max_digits=14
+    )
     promised_date: datetime | None = None
     ptp_status: PTPStatus | None = None
     retry_schedule: list[dict[str, Any]] | None = None
 
-    @field_validator("amount", "recovered_amount")
+    @field_validator("amount", "recovered_amount", "human_recovered_amount")
     @classmethod
     def _round_money(cls, v: Decimal | None) -> Decimal | None:
         return None if v is None else v.quantize(MONEY)
@@ -297,6 +377,7 @@ class EventRead(SQLModel):
     root_cause: str | None
     diagnosis_confidence: float | None
     recovered_amount: Decimal
+    human_recovered_amount: Decimal = Decimal("0")
     promised_date: datetime | None = None
     ptp_status: str = PTPStatus.NONE
     retry_schedule: list[dict[str, Any]] | None = None
@@ -324,6 +405,61 @@ class AuditRead(SQLModel):
     reasoning: str
     payload: dict[str, Any] | None
     timestamp: datetime
+
+
+class TicketCreate(SQLModel):
+    """Validated input for `insert_ticket`."""
+
+    model_config = _STRICT
+
+    ticket_id: str = Field(min_length=1)
+    event_id: str = Field(min_length=1)
+    reason: TicketReason
+    priority: int = Field(default=0, ge=0)
+    status: TicketStatus = TicketStatus.OPEN
+    summary: str = Field(min_length=1)
+    detail: str | None = None
+
+
+class TicketUpdate(SQLModel):
+    """Validated partial patch for `update_ticket`."""
+
+    model_config = _STRICT
+
+    reason: TicketReason | None = None
+    priority: int | None = Field(default=None, ge=0)
+    status: TicketStatus | None = None
+    summary: str | None = Field(default=None, min_length=1)
+    detail: str | None = None
+    assigned_employee_email: str | None = None
+    assigned_at: datetime | None = None
+    resolution_note: str | None = None
+    resolution_outcome: str | None = None
+    recovered_amount: Decimal | None = Field(default=None, ge=0, max_digits=14)
+
+    @field_validator("recovered_amount")
+    @classmethod
+    def _round_money(cls, v: Decimal | None) -> Decimal | None:
+        return None if v is None else v.quantize(MONEY)
+
+
+class TicketRead(SQLModel):
+    """Response shape for the /api/tickets surfaces -- every stored column."""
+
+    ticket_id: str
+    event_id: str
+    reason: str
+    priority: int
+    status: str
+    summary: str
+    detail: str | None
+    assigned_employee_email: str | None
+    assigned_at: datetime | None
+    resolution_note: str | None
+    resolution_outcome: str | None
+    recovered_amount: Decimal
+    created_at: datetime
+    updated_at: datetime
 
 
 class ResolvedCaseRead(SQLModel):
@@ -516,6 +652,104 @@ def get_audit_trail(
     if event_id is not None:
         statement = statement.where(AuditLog.event_id == event_id)
     return list(session.exec(statement))
+
+
+# --- human-review tickets -----------------------------------------------------
+# The queue the Triage agent fills and a human works through. Ordering is
+# priority-first so the most urgent case is always the top row.
+
+TICKET_CLOSED_STATUSES = (TicketStatus.RESOLVED, TicketStatus.UNRESOLVED)
+
+
+def next_ticket_id(session: Session) -> str:
+    """The next free `tkt_NNNN` id. Sequential so the queue reads chronologically."""
+    existing = len(session.exec(select(Ticket)).all())
+    return f"tkt_{existing + 1:04d}"
+
+
+def insert_ticket(
+    session: Session,
+    data: TicketCreate | None = None,
+    /,
+    **kwargs: Any,
+) -> Ticket:
+    """Open one human-review ticket. Validated through `TicketCreate`."""
+    payload = data if data is not None else TicketCreate(**kwargs)
+    ticket = Ticket(**payload.model_dump())
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
+def update_ticket(
+    session: Session,
+    ticket_id: str,
+    data: TicketUpdate | None = None,
+    /,
+    **fields: Any,
+) -> Ticket:
+    """Patch selected columns of one ticket. Always bumps updated_at.
+
+    Unknown keys raise (TicketUpdate has extra="forbid"); missing ticket ->
+    KeyError.
+    """
+    patch = (data if data is not None else TicketUpdate(**fields)).model_dump(
+        exclude_unset=True
+    )
+
+    ticket = session.get(Ticket, ticket_id)
+    if ticket is None:
+        raise KeyError(f"no such ticket: {ticket_id!r}")
+
+    for key, value in patch.items():
+        setattr(ticket, key, value)
+    ticket.updated_at = _utcnow()
+
+    session.add(ticket)
+    session.commit()
+    session.refresh(ticket)
+    return ticket
+
+
+def get_ticket(session: Session, ticket_id: str) -> Ticket | None:
+    return session.get(Ticket, ticket_id)
+
+
+def get_tickets(
+    session: Session, status: str | Iterable[str] | None = None
+) -> list[Ticket]:
+    """Every ticket, most urgent first (priority desc, then oldest first)."""
+    statement = select(Ticket)
+    if status is not None:
+        statuses = [status] if isinstance(status, str) else list(status)
+        statement = statement.where(Ticket.status.in_([str(s) for s in statuses]))
+    statement = statement.order_by(Ticket.priority.desc(), Ticket.created_at)
+    return list(session.exec(statement))
+
+
+def tickets_for_event(session: Session, event_id: str) -> list[Ticket]:
+    return list(
+        session.exec(
+            select(Ticket)
+            .where(Ticket.event_id == event_id)
+            .order_by(Ticket.created_at)
+        )
+    )
+
+
+def open_ticket_for_event(session: Session, event_id: str) -> Ticket | None:
+    """Any still-open (not resolved/unresolved) ticket on this event.
+
+    Triage uses this to stay idempotent across pipeline re-runs.
+    """
+    rows = session.exec(
+        select(Ticket)
+        .where(Ticket.event_id == event_id)
+        .where(Ticket.status.notin_([str(s) for s in TICKET_CLOSED_STATUSES]))
+        .order_by(Ticket.created_at)
+    ).all()
+    return rows[0] if rows else None
 
 
 # --- RAG knowledge base (resolved_cases) ------------------------------------

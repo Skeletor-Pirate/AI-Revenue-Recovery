@@ -122,7 +122,13 @@ export function Overview() {
         <StatTile
           label="₹ recovered"
           value={formatINR(m.total_recovered)}
-          sub={atRisk ? `${Math.round((recovered / atRisk) * 100)}% of ₹ at risk` : undefined}
+          sub={
+            m.human_recovered && Number(m.human_recovered) > 0
+              ? `${formatINR(m.ai_recovered ?? 0)} agents · ${formatINR(m.human_recovered)} humans`
+              : atRisk
+                ? `${Math.round((recovered / atRisk) * 100)}% of ₹ at risk`
+                : undefined
+          }
           accent="good"
         />
         <StatTile
@@ -136,10 +142,15 @@ export function Overview() {
           sub="simulated"
         />
         <StatTile
-          label="Halted"
-          value={String(sb.flagged ?? 0)}
-          sub="held for human review"
+          label="Needs a human"
+          value={String(m.tickets?.needs_attention ?? sb.flagged ?? 0)}
+          sub={
+            m.tickets
+              ? `${m.tickets.open} open · ${m.tickets.under_review} under review`
+              : 'held for human review'
+          }
           accent="critical"
+          href="/attention"
         />
         <StatTile
           label="Exceptions"

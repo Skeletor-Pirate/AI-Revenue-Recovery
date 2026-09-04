@@ -14,12 +14,22 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from app.db import store
-from app.db.store import AuditCreate, AuditLog, Event, EventCreate, EventUpdate
+from app.db.store import (
+    AuditCreate,
+    AuditLog,
+    Event,
+    EventCreate,
+    EventUpdate,
+    TicketCreate,
+    TicketReason,
+    TicketStatus,
+    TicketUpdate,
+)
 
 
-def test_init_creates_both_tables(session):
+def test_init_creates_every_table(session):
     tables = set(store.SQLModel.metadata.tables)
-    assert {"events", "audit_log"} <= tables
+    assert {"events", "audit_log", "tickets"} <= tables
 
 
 def test_insert_and_read_back(session):
@@ -235,3 +245,105 @@ def test_insert_accepts_prebuilt_schema(session):
     row = store.get_event(session, "evt_7")
     assert row.status == "recovered"
     assert row.recovered_amount == Decimal("100.00")
+
+
+# --- human-review tickets ---------------------------------------------------
+
+def _seed_event(session, event_id="evt_t", amount="1000.00"):
+    return store.insert_event(
+        session, event_id=event_id,
+        event_type=store.EventType.FAILED_PAYMENT,
+        customer_id="c", amount=Decimal(amount),
+    )
+
+
+def test_ticket_insert_defaults_and_read_back(session):
+    _seed_event(session)
+    ticket = store.insert_ticket(
+        session, ticket_id="tkt_0001", event_id="evt_t",
+        reason=TicketReason.EXCEPTION_NO_ERROR, priority=70,
+        summary="No gateway error to reason from",
+    )
+    assert ticket.status == TicketStatus.OPEN
+    assert ticket.recovered_amount == Decimal("0.00")
+    assert ticket.assigned_employee_email is None
+    assert ticket.created_at.tzinfo is not None
+
+    assert store.get_ticket(session, "tkt_0001").summary == ticket.summary
+    assert store.get_ticket(session, "nope") is None
+
+
+def test_ticket_ids_are_sequential(session):
+    _seed_event(session)
+    assert store.next_ticket_id(session) == "tkt_0001"
+    store.insert_ticket(session, ticket_id="tkt_0001", event_id="evt_t",
+                        reason=TicketReason.OTHER, summary="s")
+    assert store.next_ticket_id(session) == "tkt_0002"
+
+
+def test_get_tickets_orders_by_priority_then_age(session):
+    _seed_event(session)
+    for i, priority in enumerate((25, 90, 65), start=1):
+        store.insert_ticket(session, ticket_id=f"tkt_{i:04d}", event_id="evt_t",
+                            reason=TicketReason.OTHER, priority=priority,
+                            summary=f"s{i}")
+    assert [t.priority for t in store.get_tickets(session)] == [90, 65, 25]
+    assert store.get_tickets(session, TicketStatus.RESOLVED) == []
+
+
+def test_open_ticket_for_event_ignores_closed_work(session):
+    _seed_event(session)
+    store.insert_ticket(session, ticket_id="tkt_0001", event_id="evt_t",
+                        reason=TicketReason.OTHER, summary="s")
+    assert store.open_ticket_for_event(session, "evt_t").ticket_id == "tkt_0001"
+
+    store.update_ticket(session, "tkt_0001", status=TicketStatus.RESOLVED)
+    assert store.open_ticket_for_event(session, "evt_t") is None
+    # ...but the history is still there
+    assert len(store.tickets_for_event(session, "evt_t")) == 1
+
+
+def test_update_ticket_bumps_updated_at_and_rejects_unknown(session):
+    _seed_event(session)
+    ticket = store.insert_ticket(session, ticket_id="tkt_0001", event_id="evt_t",
+                                 reason=TicketReason.OTHER, summary="s")
+    before = ticket.updated_at
+    updated = store.update_ticket(
+        session, "tkt_0001",
+        TicketUpdate(status=TicketStatus.UNDER_REVIEW,
+                     assigned_employee_email="asha@acme.com"),
+    )
+    assert updated.updated_at > before
+    assert updated.assigned_employee_email == "asha@acme.com"
+
+    with pytest.raises(KeyError):
+        store.update_ticket(session, "tkt_9999", status=TicketStatus.RESOLVED)
+
+
+def test_ticket_schema_validation(session):
+    with pytest.raises(ValidationError):
+        TicketCreate(ticket_id="t", event_id="e", reason="made_up", summary="s")
+    with pytest.raises(ValidationError):
+        TicketCreate(ticket_id="t", event_id="e", reason=TicketReason.OTHER,
+                     summary="")                       # min_length=1
+    with pytest.raises(ValidationError):
+        TicketUpdate(assigned_employe_email="typo")     # extra="forbid"
+    with pytest.raises(ValidationError):
+        TicketUpdate(recovered_amount=-1)               # ge=0
+
+    tc = TicketCreate(ticket_id="t", event_id="e", reason=TicketReason.OTHER,
+                      summary="s")
+    assert tc.model_dump()["status"] == "open"          # enum -> plain str
+
+
+def test_ticket_requires_a_real_event(session):
+    with pytest.raises(IntegrityError):
+        store.insert_ticket(session, ticket_id="tkt_0001", event_id="ghost",
+                            reason=TicketReason.OTHER, summary="s")
+
+
+def test_human_recovered_amount_defaults_and_patches(session):
+    _seed_event(session)
+    assert store.get_event(session, "evt_t").human_recovered_amount == Decimal("0.00")
+    store.update_event(session, "evt_t", human_recovered_amount=Decimal("250.006"))
+    assert store.get_event(session, "evt_t").human_recovered_amount == Decimal("250.01")

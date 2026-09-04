@@ -1,13 +1,14 @@
 """End-to-end AI Revenue Recovery pipeline runner — build-order step 7.
 
-Chains the four agents over the seeded batch:
+Chains the agents over the seeded batch:
 
-    Detection -> Diagnosis -> Recovery -> Audit
+    Detection -> Diagnosis -> Recovery -> Triage -> Audit
 
 and returns the full-batch ``MetricsBlock`` (AGENTS_CONTRACT.md §8 / plan.md §7).
 Every event ends in a terminal status (``recovered`` | ``exception`` |
-``flagged``); the fraud cluster is halted; metrics are computed over the whole
-batch with the honest exception list.
+``flagged``); the fraud cluster is halted; Triage opens a human-review ticket for
+every case the automation could not carry further; metrics are computed over the
+whole batch with the honest exception list.
 
 CLI:
     uv run python -m app.pipeline                # run over the current DB
@@ -21,7 +22,7 @@ import json
 from typing import Any
 
 from app import rag
-from app.agents import audit, detection, diagnosis, recovery
+from app.agents import audit, detection, diagnosis, recovery, triage
 from app.config import get_settings
 from app.data import generate
 from app.db import store
@@ -32,8 +33,8 @@ def run(
     *,
     settings: Any = None,
 ) -> dict[str, Any]:
-    """Run the four agents in order over whatever batch is currently seeded in
-    the store, then return the Audit agent's ``MetricsBlock``.
+    """Run the agents in order over whatever batch is currently seeded in the
+    store, then return the Audit agent's ``MetricsBlock``.
 
     Assumes the batch has already been generated (call :func:`app.data.generate`
     or pass ``--reset`` on the CLI). Each agent commits its own writes through
@@ -47,18 +48,24 @@ def run(
         rag.seed_reference_cases(session, settings=settings)  # first run only
         diagnosis.run(session, settings=settings)
         recovery.run(session, settings=settings)
+        # every event is terminal here — hand the ones the automation could not
+        # finish to a human as priority-ordered review tickets
+        triage.run(session, settings=settings)
         audit.run(session, settings=settings)
         rag.index_resolved_cases(session, settings=settings)  # grow the KB
         return audit.compute_metrics(session)
 
 
 def _format_summary(metrics: dict[str, Any]) -> str:
+    tk = metrics["tickets"]
     lines = [
         "AI Revenue Recovery — batch run",
         "=" * 40,
         f"events in batch         : {metrics['event_count']}",
         f"total at risk           : Rs {metrics['total_at_risk']}",
         f"total recovered         : Rs {metrics['total_recovered']}",
+        f"  by the automation     : Rs {metrics['ai_recovered']}",
+        f"  by a human reviewer   : Rs {metrics['human_recovered']}",
         f"overall recovery rate   : {metrics['overall_recovery_rate']:.0%}",
         f"avg hours to recovery   : {metrics['avg_hours_to_recovery']}",
         "",
@@ -91,6 +98,14 @@ def _format_summary(metrics: dict[str, Any]) -> str:
             f"  {row['event_id']:<10} {row['event_type']:<18} "
             f"Rs {row['amount']:>12}  {row['root_cause'] or '-':<20} {row['reason']}"
             for row in metrics["exceptions"]
+        ),
+        "",
+        f"human review queue      : {tk['needs_attention']} awaiting attention "
+        f"({tk['open']} open, {tk['under_review']} under review) of {tk['total']} total",
+        *(
+            f"  {reason:<22} {count}"
+            for reason, count in tk["by_reason"].items()
+            if count
         ),
     ]
     return "\n".join(lines)

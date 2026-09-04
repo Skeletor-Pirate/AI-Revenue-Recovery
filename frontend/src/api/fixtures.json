@@ -2166,6 +2166,222 @@
         "fraud_00"
       ],
       "reason": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54\u20135003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery."
+    },
+    "ai_recovered": "72465.19",
+    "human_recovered": "7092.97",
+    "tickets": {
+      "total": 6,
+      "open": 4,
+      "under_review": 1,
+      "resolved": 1,
+      "unresolved": 0,
+      "needs_attention": 5,
+      "by_reason": {
+        "suspected_fraud": 1,
+        "customer_question": 1,
+        "awaiting_approval": 1,
+        "exception_no_error": 1,
+        "invoice_handoff": 1,
+        "stalled_no_response": 1,
+        "other": 0
+      },
+      "oldest_open_hours": 51.4,
+      "resolution_rate": 1.0,
+      "human_recovered": "7092.97"
     }
+  },
+  "tickets": {
+    "tickets": [
+      {
+        "ticket_id": "tkt_0035",
+        "event_id": "fraud_03",
+        "reason": "suspected_fraud",
+        "priority": 91,
+        "status": "open",
+        "summary": "failed payment of Rs 5003.06 halted as part of a matching-signature cluster. Recovery refused to act \u2014 confirm genuine or abuse before anything else.",
+        "detail": null,
+        "assigned_employee_email": null,
+        "assigned_at": null,
+        "resolution_note": null,
+        "resolution_outcome": null,
+        "recovered_amount": "0.00",
+        "created_at": "2026-09-04T13:42:36.988555Z",
+        "updated_at": "2026-09-04T13:42:36.988555Z"
+      },
+      {
+        "ticket_id": "tkt_0047",
+        "event_id": "evt_021",
+        "reason": "customer_question",
+        "priority": 80,
+        "status": "open",
+        "summary": "Customer asked something the AI could not answer on a overdue invoice of Rs 548.15.",
+        "detail": "Maine last month bhi pay kiya tha, uska receipt nahi mila. Ye naya invoice usi ka to nahi hai?",
+        "assigned_employee_email": null,
+        "assigned_at": null,
+        "resolution_note": null,
+        "resolution_outcome": null,
+        "recovered_amount": "0.00",
+        "created_at": "2026-09-04T14:31:28.543651Z",
+        "updated_at": "2026-09-04T14:31:28.543651Z"
+      },
+      {
+        "ticket_id": "tkt_0004",
+        "event_id": "evt_061",
+        "reason": "awaiting_approval",
+        "priority": 76,
+        "status": "resolved",
+        "summary": "invoice escalation to stage 2 (formal_notice) on Rs 7092.97 is above the human-approval gate. Not executed \u2014 needs your sign-off.",
+        "detail": null,
+        "assigned_employee_email": "asha@acme.com",
+        "assigned_at": "2026-09-04T14:29:06.596195Z",
+        "resolution_note": "Approved the 10 pct offer within policy; customer completed checkout on the call.",
+        "resolution_outcome": "resolved",
+        "recovered_amount": "7092.97",
+        "created_at": "2026-09-04T13:42:35.266735Z",
+        "updated_at": "2026-09-04T14:29:06.662414Z"
+      },
+      {
+        "ticket_id": "tkt_0005",
+        "event_id": "silent_00",
+        "reason": "exception_no_error",
+        "priority": 65,
+        "status": "under_review",
+        "summary": "failed payment of Rs 1201.93 failed with no gateway error code and no root cause the classifier could stand behind. Needs human eyes.",
+        "detail": null,
+        "assigned_employee_email": "bhavin@acme.com",
+        "assigned_at": "2026-09-04T14:31:28.597342Z",
+        "resolution_note": null,
+        "resolution_outcome": null,
+        "recovered_amount": "0.00",
+        "created_at": "2026-09-04T13:42:35.317315Z",
+        "updated_at": "2026-09-04T14:31:28.597342Z"
+      },
+      {
+        "ticket_id": "tkt_0032",
+        "event_id": "evt_021",
+        "reason": "invoice_handoff",
+        "priority": 55,
+        "status": "open",
+        "summary": "Invoice for Rs 548.15 reached the final rung of the escalation ladder (69 days overdue). Automation stops here.",
+        "detail": null,
+        "assigned_employee_email": null,
+        "assigned_at": null,
+        "resolution_note": null,
+        "resolution_outcome": null,
+        "recovered_amount": "0.00",
+        "created_at": "2026-09-04T13:42:36.814777Z",
+        "updated_at": "2026-09-04T13:42:36.814777Z"
+      },
+      {
+        "ticket_id": "tkt_0017",
+        "event_id": "evt_043",
+        "reason": "stalled_no_response",
+        "priority": 26,
+        "status": "open",
+        "summary": "expired mandate of Rs 5185.04 ran out of bounded attempts (1 made) with no customer response. Optional personal follow-up.",
+        "detail": null,
+        "assigned_employee_email": null,
+        "assigned_at": null,
+        "resolution_note": null,
+        "resolution_outcome": null,
+        "recovered_amount": "0.00",
+        "created_at": "2026-09-04T13:42:35.929921Z",
+        "updated_at": "2026-09-04T13:42:35.929921Z"
+      }
+    ],
+    "count": 6,
+    "open_count": 4,
+    "under_review_count": 1
+  },
+  "ticketDetail": {
+    "ticket": {
+      "ticket_id": "tkt_0035",
+      "event_id": "fraud_03",
+      "reason": "suspected_fraud",
+      "priority": 91,
+      "status": "open",
+      "summary": "failed payment of Rs 5003.06 halted as part of a matching-signature cluster. Recovery refused to act \u2014 confirm genuine or abuse before anything else.",
+      "detail": null,
+      "assigned_employee_email": null,
+      "assigned_at": null,
+      "resolution_note": null,
+      "resolution_outcome": null,
+      "recovered_amount": "0.00",
+      "created_at": "2026-09-04T13:42:36.988555Z",
+      "updated_at": "2026-09-04T13:42:36.988555Z"
+    },
+    "event": {
+      "event_id": "fraud_03",
+      "event_type": "failed_payment",
+      "customer_id": "cust_899732",
+      "amount": "5003.06",
+      "currency": "INR",
+      "raw_failure_reason": "card_declined",
+      "attempts_so_far": 3,
+      "days_overdue": 0,
+      "created_at": "2026-09-01T13:57:41.182236Z",
+      "updated_at": "2026-09-04T13:41:58.670894Z",
+      "status": "flagged",
+      "root_cause": "suspected_fraud",
+      "diagnosis_confidence": null,
+      "recovered_amount": "0.00",
+      "human_recovered_amount": "0.00",
+      "promised_date": null,
+      "ptp_status": "none",
+      "retry_schedule": null
+    },
+    "trail": [
+      {
+        "id": 55,
+        "event_id": "fraud_03",
+        "agent": "detection",
+        "action": "flagged_at_risk",
+        "reasoning": "Confirmed failed_payment for customer cust_899732 as at-risk revenue of 5003.06 INR; leaving it detected for the Diagnosis Agent.",
+        "payload": {
+          "event_type": "failed_payment",
+          "amount_at_risk": "5003.06"
+        },
+        "timestamp": "2026-09-04T13:41:56.357960Z"
+      },
+      {
+        "id": 77,
+        "event_id": "fraud_03",
+        "agent": "triage",
+        "action": "halted_fraud_cluster",
+        "reasoning": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54\u20135003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery.",
+        "payload": {
+          "signature": {
+            "amount_band": [
+              "4981.54",
+              "5003.06"
+            ],
+            "customer_count": 4,
+            "window_minutes": 23,
+            "raw_failure_reason": "card_declined"
+          },
+          "cluster_event_ids": [
+            "fraud_03",
+            "fraud_01",
+            "fraud_02",
+            "fraud_00"
+          ]
+        },
+        "timestamp": "2026-09-04T13:41:58.679686Z"
+      },
+      {
+        "id": 393,
+        "event_id": "fraud_03",
+        "agent": "triage",
+        "action": "opened_review_ticket",
+        "reasoning": "Automation could take this no further (suspected_fraud); opened tkt_0035 for human review at priority 91 (critical).",
+        "payload": {
+          "reason": "suspected_fraud",
+          "priority": 91,
+          "ticket_id": "tkt_0035",
+          "priority_band": "critical"
+        },
+        "timestamp": "2026-09-04T13:42:37.013311Z"
+      }
+    ]
   }
 }

@@ -5,8 +5,12 @@ import type {
   EventSimilarResponse,
   EventsResponse,
   EventVoiceResponse,
+  EventVoiceAudioResponse,
   MetricsBlock,
   PipelineRunResponse,
+  TicketDetailResponse,
+  TicketMutationResponse,
+  TicketsResponse,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -32,6 +36,8 @@ export const api = {
     request<EventSimilarResponse>(`/api/events/${encodeURIComponent(id)}/similar`),
   getVoiceScript: (id: string) =>
     request<EventVoiceResponse>(`/api/events/${encodeURIComponent(id)}/voice`),
+  getVoiceAudio: (id: string) =>
+    request<EventVoiceAudioResponse>(`/api/events/${encodeURIComponent(id)}/voice/audio`),
   getSequencerSchedule: (id: string) =>
     request<EventSequencerResponse>(`/api/events/${encodeURIComponent(id)}/sequencer`),
   recordPTP: (id: string, promisedDate: string, notes?: string) =>
@@ -39,6 +45,40 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ promised_date: promisedDate, notes }),
     }),
+  // --- human review queue ---
+  listTickets: (status?: string) =>
+    request<TicketsResponse>(
+      `/api/tickets${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    ),
+  getTicket: (id: string) =>
+    request<TicketDetailResponse>(`/api/tickets/${encodeURIComponent(id)}`),
+  assignTicket: (id: string, employeeEmail: string) =>
+    request<TicketMutationResponse>(
+      `/api/tickets/${encodeURIComponent(id)}/assign`,
+      { method: 'POST', body: JSON.stringify({ employee_email: employeeEmail }) },
+    ),
+  resolveTicket: (
+    id: string,
+    body: {
+      employee_email: string
+      outcome: 'resolved' | 'unresolved'
+      note: string
+      recovered_amount?: string | null
+    },
+  ) =>
+    request<TicketMutationResponse>(
+      `/api/tickets/${encodeURIComponent(id)}/resolve`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  raiseQuestion: (
+    eventId: string,
+    body: { question: string; channel?: string; employee_email?: string | null },
+  ) =>
+    request<TicketMutationResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/raise-question`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
   getMetrics: () => request<MetricsBlock>('/api/metrics'),
   runPipeline: () =>
     request<PipelineRunResponse>('/api/pipeline/run', { method: 'POST' }),

@@ -8,7 +8,20 @@ Diagrams and design rationale. Companion to
 > the same change that alters the architecture, data model, agent flow, or
 > runtime topology.
 
-Last updated: 2026-09-04 — Extended Capabilities: Direction 5 (Mandate Retry Sequencer: `app/agents/sequencer.py`),
+Last updated: 2026-09-04 — **Urgent human attention**: a `tickets` table +
+Triage agent (`app/agents/triage.py`) between Recovery and Audit, a
+priority-ordered review queue with a take → record-what-you-did → resolved /
+unresolved lifecycle, `agent="human"` audit rows, and AI-vs-human recovered-money
+attribution (`Event.human_recovered_amount`). New §5.1 (ticket lifecycle) and
+§6.1 (a human working the queue); §2 / §4 / §5 / §7 / §8 updated. Turns plan.md
+§6's audit-log-only human-approval flag into the real workflow it says to build
+when not short on time.
+Prior: 2026-09-04 — Direction 6 spoken playback: Sarvam AI (`bulbul`) neural
+TTS for the Hinglish Voice Recovery Agent (`app/agents/voice_tts.py`, `GET
+/api/events/{id}/voice/audio`); `VoiceCallDrawer` plays per-turn Sarvam WAV clips
+and degrades to the browser `SpeechSynthesis` voice when `SARVAM_API_KEY` is unset
+or the provider errors.
+Prior: 2026-09-04 — Extended Capabilities: Direction 5 (Mandate Retry Sequencer: `app/agents/sequencer.py`),
 Direction 6 (Hinglish Voice Recovery Agent: `app/agents/voice.py` + `VoiceCallDrawer`), Direction 7 (Promise-to-Pay Tracker: `app/agents/ptp.py` + `PTPModal`).
 Prior: 2026-09-04 — Multi-stage Docker containerization & GitHub Actions CD
 (`.github/workflows/cd.yml` → GHCR image registry; `backend/Dockerfile` + `frontend/Dockerfile` + `nginx.conf` + full-stack `docker-compose.yml`).
@@ -31,15 +44,19 @@ PostgreSQL process.
 
 ## 1. One-paragraph summary
 
-Synthetic (and later, real Razorpay test-mode webhook) events flow through four
-sequential agents — **Detection → Diagnosis → Recovery → Audit** — that all read
-and write one shared Postgres store via `app/db/store.py`. Every money-related
-decision is written to the `audit_log` table *as it happens*; that table **is**
-the audit trail. Recovery is root-cause-differentiated and bounded by explicit
-stopping rules; a fraud-like cluster is deliberately re-classified as `flagged`
-and left alone. A FastAPI backend exposes the store and the pipeline over REST;
-a React dashboard renders the at-risk queue, per-case decision trails, recovery
-metrics, and an honest exception list.
+Synthetic (and later, real Razorpay test-mode webhook) events flow through
+sequential agents — **Detection → Diagnosis → Recovery → Triage → Audit** — that
+all read and write one shared Postgres store via `app/db/store.py`. Every
+money-related decision is written to the `audit_log` table *as it happens*; that
+table **is** the audit trail. Recovery is root-cause-differentiated and bounded
+by explicit stopping rules; a fraud-like cluster is deliberately re-classified as
+`flagged` and left alone. Where the automation stops, **Triage** opens a
+priority-ordered human-review ticket, and a person's own actions — taking a
+ticket, recording what they did, recovering money themselves — are written to the
+same audit trail as `agent="human"`. A FastAPI backend exposes the store and the
+pipeline over REST; a React dashboard renders the at-risk queue, per-case
+decision trails, recovery metrics, an honest exception list, and the urgent
+human-attention queue.
 
 ---
 
@@ -59,20 +76,26 @@ flowchart TD
         DET[Detection Agent<br/>flag at-risk revenue]
         DIA[Diagnosis Agent<br/>root cause + fraud triage]
         REC[Recovery Agent<br/>route intervention · enforce stopping rules]
-        AUD[Audit / Reporting Agent<br/>metrics · exception list]
-        DET --> DIA --> REC --> AUD
+        TRI[Triage Agent<br/>open priority-ranked human-review tickets]
+        AUD[Audit / Reporting Agent<br/>metrics · exception list · queue]
+        DET --> DIA --> REC --> TRI --> AUD
     end
 
     DET <--> STORE
     DIA <--> STORE
     REC <--> STORE
+    TRI <--> STORE
     AUD <--> STORE
 
-    STORE[(Postgres<br/>events + audit_log<br/>via app/db/store.py)]
+    STORE[(Postgres<br/>events + audit_log + tickets<br/>via app/db/store.py)]
 
     AUD --> API
     STORE --> API
     API[FastAPI<br/>app/main.py + app/api/*] --> UI[React dashboard<br/>frontend/]
+
+    UI -->|"take · resolve · raise a question"| HUM
+    HUM(["Human reviewer<br/>agent=human in the audit trail"])
+    HUM -->|"assign / resolve / human_recovered"| STORE
 
     DIA <-.->|"retrieve similar<br/>classified cases"| RAG
     AUD -.->|"index confidently<br/>classified events"| RAG
@@ -84,7 +107,7 @@ flowchart TD
 
     classDef done fill:#d3f9d8,stroke:#2b8a3e;
     classDef todo fill:#fff3bf,stroke:#e67700;
-    class SYN,STORE,DET,DIA,REC,AUD,API,UI,RAG,LLM,WH done;
+    class SYN,STORE,DET,DIA,REC,TRI,AUD,API,UI,RAG,LLM,WH,HUM done;
 ```
 
 Both event sources feed the same store: the synthetic generator seeds a batch;
@@ -100,9 +123,17 @@ classifier). `app/rag.py` retrieves the nearest already-classified cases from
 LLM call; `pipeline.run` grows that knowledge base after each run (curated:
 dedup + per-bucket cap).
 
-Green = built. Amber = not yet built (only the stretch Razorpay webhook
-listener remains). `app/pipeline.py` chains DET→DIA→REC→AUD; `app/api/*`
-exposes the store + pipeline over REST; the React dashboard renders it.
+**Triage** runs once every event is terminal. It opens exactly one review ticket
+per case the automation could not carry further, scores it so the queue is
+priority-ordered (suspected fraud ≫ a retry that merely ran out of attempts), and
+never reopens a ticket a person has closed. The human's loop back into the store
+is a real edge, not a diagram flourish: taking a ticket, closing it with a note,
+and recording money they recovered each write an `agent="human"` audit row, and
+human-recovered money is tracked separately from what the agents collected.
+
+Green = built. `app/pipeline.py` chains DET→DIA→REC→TRI→AUD; `app/api/*`
+exposes the store + pipeline + review queue over REST; the React dashboard
+renders it.
 
 ---
 
@@ -154,6 +185,7 @@ flowchart LR
 ```mermaid
 erDiagram
     EVENTS ||--o{ AUDIT_LOG : "has decisions"
+    EVENTS ||--o{ TICKETS : "escalates to a human"
 
     EVENTS {
         text        event_id PK
@@ -169,17 +201,35 @@ erDiagram
         text        status "detected → diagnosed → action_taken → recovered | exception | flagged"
         text        root_cause "nullable — RootCause enum: insufficient_funds | expired_instrument | bank_downtime | auth_failure | card_declined | checkout_abandoned | invoice_forgotten | suspected_fraud | unknown"
         float       diagnosis_confidence "nullable 0..1"
-        numeric     recovered_amount "14,2 — default 0"
+        numeric     recovered_amount "14,2 — default 0; the honest total"
+        numeric     human_recovered_amount "14,2 — of the total, how much a human brought in"
     }
 
     AUDIT_LOG {
         bigint      id PK
         text        event_id FK
-        text        agent "detection | diagnosis | recovery | triage | audit"
+        text        agent "detection | diagnosis | recovery | triage | audit | human"
         text        action
         text        reasoning "human-readable WHY — never empty"
         jsonb       payload "nullable — drafted message / metrics"
         timestamptz timestamp
+    }
+
+    TICKETS {
+        text        ticket_id PK "tkt_NNNN"
+        text        event_id FK
+        text        reason "suspected_fraud | customer_question | awaiting_approval | exception_no_error | invoice_handoff | stalled_no_response | other"
+        int         priority "higher = more urgent; reason base + bounded amount weight"
+        text        status "open → under_review → resolved | unresolved"
+        text        summary "why a human is needed, in plain English"
+        text        detail "nullable — e.g. the customer's question verbatim"
+        text        assigned_employee_email "nullable — who took it"
+        timestamptz assigned_at "nullable"
+        text        resolution_note "nullable — what the human actually did"
+        text        resolution_outcome "nullable — resolved | unresolved"
+        numeric     recovered_amount "14,2 — money this resolution brought in"
+        timestamptz created_at
+        timestamptz updated_at
     }
 
     RESOLVED_CASES {
@@ -214,14 +264,37 @@ stateDiagram-v2
     action_taken --> recovered : money clawed back
     action_taken --> exception : stopping rule hit / gave up (with reason)
     action_taken --> action_taken : retry within limits (attempts_so_far++)
+    exception --> recovered : human resolves a ticket, money in (agent=human)
+    flagged --> recovered : human confirms genuine + collects (agent=human)
     recovered --> [*]
     exception --> [*]
     flagged --> [*]
 ```
 
-`recovered` / `exception` / `flagged` are terminal. `exception` = honest
-"couldn't recover, here's why"; `flagged` = deliberately stopped (suspected
-abuse), never retried.
+`recovered` / `exception` / `flagged` are terminal **for the automation**.
+`exception` = honest "couldn't recover, here's why"; `flagged` = deliberately
+stopped (suspected abuse), never retried by an agent. The only way out of a
+terminal state is a **person** closing a review ticket having actually collected
+the outstanding money — an audited, attributed override, never an automated one.
+
+### 5.1 Human-review ticket lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> open : Triage Agent (pipeline) — automation could go no further
+    [*] --> open : raise_customer_question — asked something the AI can't answer
+    open --> under_review : assign_ticket(employee_email) — one owner, no stealing
+    under_review --> resolved : resolve_ticket(outcome="resolved") + what they did
+    under_review --> unresolved : resolve_ticket(outcome="unresolved") — honest "couldn't fix"
+    resolved --> [*]
+    unresolved --> [*]
+```
+
+Closed is closed: a later pipeline run never reopens or duplicates a ticket a
+person has already dealt with. Every transition writes an `agent="human"` audit
+row, and the reviewer's own note becomes that row's `reasoning` verbatim — so
+the case trail reads as one story from first detection to the person who
+finished it.
 
 ---
 
@@ -249,9 +322,51 @@ sequenceDiagram
         PIPE->>STORE: log_action(agent="recovery", reasoning)
         STORE->>PG: INSERT / UPDATE (committed per action)
     end
-    PIPE->>STORE: all_events(), get_audit_trail()
-    PIPE-->>API: metrics + exception list
-    API-->>UI: JSON (₹ recovered by cause, recovery rate, exceptions)
+    PIPE->>STORE: get_events_by_status(["flagged","exception"])
+    PIPE->>STORE: insert_ticket(reason, priority) + log_action(agent="triage")
+    PIPE->>STORE: all_events(), get_audit_trail(), get_tickets()
+    PIPE-->>API: metrics + exception list + queue
+    API-->>UI: JSON (₹ recovered by cause, recovery rate, exceptions, tickets)
+```
+
+### 6.1 A human working the queue
+
+```mermaid
+sequenceDiagram
+    actor H as Reviewer (asha@acme.com)
+    participant UI as /attention
+    participant API as FastAPI
+    participant TRI as triage.py
+    participant STORE as store.py
+
+    H->>UI: open the priority-ordered queue
+    UI->>API: GET /api/tickets
+    API-->>UI: tickets (priority desc)
+    H->>UI: click a ticket
+    UI->>API: GET /api/tickets/{id}
+    API-->>UI: ticket + event + full audit trail
+
+    H->>UI: "Take this ticket"
+    UI->>API: POST /api/tickets/{id}/assign {employee_email}
+    API->>TRI: assign_ticket()
+    TRI->>STORE: update_ticket(status="under_review")
+    TRI->>STORE: log_action(agent="human", "assigned_review_ticket")
+
+    Note over H: makes the call / checks with the risk team
+
+    H->>UI: "Record what you did" + optional ₹ recovered
+    UI->>API: POST /api/tickets/{id}/resolve {outcome, note, recovered_amount}
+    API->>TRI: resolve_ticket()
+    TRI->>TRI: guards — under review? valid outcome? note present?<br/>amount ≤ what is still at risk?
+    TRI->>STORE: update_ticket(status, resolution_note)
+    TRI->>STORE: log_action(agent="human", "resolved_review_ticket", reasoning=note)
+    opt money recovered
+        TRI->>STORE: update_event(recovered_amount, human_recovered_amount, status)
+        TRI->>STORE: log_action(agent="human", "human_recovered")
+    end
+    API-->>UI: updated ticket
+    UI->>API: GET /api/metrics
+    API-->>UI: total_recovered = ai_recovered + human_recovered
 ```
 
 ---
@@ -269,6 +384,8 @@ sequenceDiagram
 | Recovery Agent | `app/agents/recovery.py` ✅ | root-cause-specific intervention; draft outreach; **enforce stopping rules** (max attempts, max escalation, cooldown, amount gate) | bounded; never reads `flagged`; human-approval flag above ₹5,000 (logged, not executed); deterministic outcome |
 | Mandate Retry Sequencer | `app/agents/sequencer.py` ✅ | intelligent multi-step mandate & subscription retry schedule (Direction 5) | rail-aware (UPI AutoPay / e-NACH / Card Token), calendar & salary cycle optimized, NPCI 3-attempt limit |
 | Hinglish Voice Recovery | `app/agents/voice.py` ✅ | conversational multi-turn phone call scripts & WhatsApp copy in natural Hinglish (Direction 6) | natural code-switching, empathetic tone, offline deterministic fallback scripts |
+| Hinglish Voice TTS | `app/agents/voice_tts.py` ✅ | synthesize each dialogue turn via Sarvam AI `bulbul` (agent vs customer speaker), return base64 WAV clips | optional (needs `SARVAM_API_KEY`); never raises — degrades to `available:false` so the dashboard uses the browser voice |
+| Triage Agent | `app/agents/triage.py` ✅ | open one priority-scored review ticket per case the automation could not finish; carry the three human actions (take / resolve / raise a customer question) | idempotent — never duplicates or reopens a closed ticket; every human action writes an `agent="human"` audit row; resolution money bounded by what is still at risk |
 | Promise-to-Pay (PTP) Tracker | `app/agents/ptp.py` ✅ | commitment state machine: pause escalation, track honor/breakage, metrics (Direction 7) | pauses automated contact during commitment window; records fulfillment & breakage to audit trail |
 | Audit / Reporting | `app/agents/audit.py` ✅ | `compute_metrics` rolls `audit_log` + `events` into the MetricsBlock; `run` writes one `batch_metrics` row | computed over the full batch; exception list complete, never hidden; includes PTP metrics |
 | Pipeline | `app/pipeline.py` ✅ | chains agents 3–6 into one run; returns the MetricsBlock | argparse CLI + printed summary |
@@ -305,6 +422,15 @@ sequenceDiagram
 | Cross-agent coupling | frozen `AGENTS_CONTRACT.md` (I/O table, `action` registry, stopping-rule constants, fraud signature, `payload` shapes) | agents are sequential at runtime but independent at build time — a contract lets the four modules be built in parallel by separate agents |
 | Recovery outcome | deterministic per `hash(event_id)` vs a per-intervention success rate | stable, repeatable demo + tests; no RNG in the pipeline |
 | Failure codes | corrected to real Razorpay test-mode strings (`insufficient_fund`, `authentication_failed`, `payment_timed_out`, `card_number_invalid`) verified 2026-09-03 | judged by Razorpay engineers; earlier codes (`insufficient_funds`, `incorrect_otp`) were near-misses |
+| Human review as a **table**, not columns on `events` | new `tickets` table, FK to `events` | a ticket has its own lifecycle, owner and history independent of the event's; one event can be escalated more than once (e.g. a stalled retry, then a customer question). Columns on `events` would have flattened all of that into one mutable row |
+| Ticket priority | integer score = reason base + `min(15, amount/5000)`, banded for display | ordering the queue is a *product* decision, so it lives in visible constants (`triage.PRIORITY_BASE`), not emergent sorting. Reason dominates; money only breaks ties, so a ₹45,000 stalled retry can never outrank a ₹400 fraud halt |
+| "Tried 3×, no response" **is** ticketed, at the lowest band | `stalled_no_response`, base 25 | the automation behaved correctly and stopping rules did their job — but it is still lost revenue a person may choose to chase. Making it invisible would hide real money; making it urgent would bury the fraud and approval work. Lowest band is the honest middle |
+| Human actions are `agent="human"` | new `Agent.HUMAN` enum member | the audit trail's whole value is that it names who decided. Laundering a person's decision through `agent="triage"` would have been a lie in the one table that must not lie |
+| Reviewer note becomes the audit `reasoning` verbatim | `resolve_ticket(note=...)` → `log_action(reasoning=note)` | a human's own words are a better justification than anything generated for them; it also makes the note field impossible to leave empty (`reasoning` is NOT NULL) |
+| Recovered money split AI vs human | `Event.human_recovered_amount` alongside the existing total | "measured money recovered" stays one honest total, but the dashboard can say what the agents actually earned. Deriving AI as `total − human` means no existing metric or write path changed |
+| Human override of a terminal state | only via `resolve_ticket` with money that is bounded by what is still at risk | the lifecycle is forward-only for *agents*; a person may finish a case the automation gave up on, but only with a note, an identity, and an amount that cannot exceed the exposure |
+| Reviewer identity | work email in `localStorage`, stamped on every action; no auth | the dashboard is an internal test-mode tool. The requirement is **attribution in the audit trail**, not access control — real deployment puts SSO in front. Pretending otherwise would be security theatre |
+| Fixture-mode tickets are sticky | in-memory array in `dataSource.ts`, unlike the read-only event fixtures | the review flow is a *sequence* (take, then resolve). A demo where step one silently reverts would misrepresent how the feature behaves against the live API |
 
 ---
 

@@ -13,6 +13,9 @@ import type {
   EventsResponse,
   MetricsBlock,
   PipelineRunResponse,
+  TicketDetailResponse,
+  TicketRead,
+  TicketsResponse,
 } from './types'
 
 const SOURCE = (import.meta.env.VITE_DATA_SOURCE ?? 'fixtures').toLowerCase()
@@ -24,6 +27,8 @@ interface FixturesShape {
   eventSimilar: EventSimilarResponse
   pipelineRun: PipelineRunResponse
   metrics: MetricsBlock
+  tickets: TicketsResponse
+  ticketDetail: TicketDetailResponse
 }
 
 const fx = fixturesJson as unknown as FixturesShape
@@ -31,6 +36,28 @@ const fx = fixturesJson as unknown as FixturesShape
 // Simulate a network hop so loading/skeleton states are exercised in fixture mode.
 const settle = <T>(value: T): Promise<T> =>
   new Promise((resolve) => setTimeout(() => resolve(value), 120))
+
+// Fixture-mode tickets are held in memory and DO persist for the session, unlike
+// the read-only event fixtures. The review workflow is a sequence -- take a
+// ticket, then resolve it -- so a demo where the first step silently reverts
+// would misrepresent how the feature behaves against the live API.
+const ticketsMem: TicketRead[] = fx.tickets.tickets.map((t) => ({ ...t }))
+
+const ticketsResponse = (): TicketsResponse => ({
+  tickets: [...ticketsMem].sort(
+    (a, b) => b.priority - a.priority || a.created_at.localeCompare(b.created_at),
+  ),
+  count: ticketsMem.length,
+  open_count: ticketsMem.filter((t) => t.status === 'open').length,
+  under_review_count: ticketsMem.filter((t) => t.status === 'under_review').length,
+})
+
+const patchTicket = (id: string, patch: Partial<TicketRead>): TicketRead => {
+  const i = ticketsMem.findIndex((t) => t.ticket_id === id)
+  if (i < 0) throw new Error(`no such ticket: ${id}`)
+  ticketsMem[i] = { ...ticketsMem[i], ...patch, updated_at: new Date().toISOString() }
+  return ticketsMem[i]
+}
 
 export const dataSource = {
   isLive: IS_LIVE,
@@ -80,6 +107,19 @@ export const dataSource = {
     })
   },
 
+  async getVoiceAudio(id: string) {
+    if (IS_LIVE) return api.getVoiceAudio(id)
+    // No TTS provider in fixture mode — dashboard uses the browser voice.
+    return settle({
+      event_id: id,
+      available: false,
+      provider: 'sarvam',
+      audio_format: 'wav',
+      sample_rate: 22050,
+      audio: [],
+    })
+  },
+
   async getSequencerSchedule(id: string) {
     if (IS_LIVE) return api.getSequencerSchedule(id)
     return settle({
@@ -111,6 +151,94 @@ export const dataSource = {
         ptp_status: 'promised' as const,
       },
     })
+  },
+
+  // --- human review queue ---
+
+  async getTickets(status?: string): Promise<TicketsResponse> {
+    if (IS_LIVE) return api.listTickets(status)
+    const all = ticketsResponse()
+    if (!status) return settle(all)
+    const tickets = all.tickets.filter((t) => t.status === status)
+    return settle({ ...all, tickets, count: tickets.length })
+  },
+
+  async getTicket(id: string): Promise<TicketDetailResponse> {
+    if (IS_LIVE) return api.getTicket(id)
+    const ticket = ticketsMem.find((t) => t.ticket_id === id)
+    if (!ticket) return settle(fx.ticketDetail)
+    // the fixture ships one full trail; other tickets reuse their event's
+    const canned = fx.ticketDetail
+    const event =
+      fx.events.events.find((e) => e.event_id === ticket.event_id) ?? canned.event
+    return settle({
+      ticket,
+      event,
+      trail: canned.ticket.event_id === ticket.event_id ? canned.trail : [],
+    })
+  },
+
+  async assignTicket(id: string, employeeEmail: string) {
+    if (IS_LIVE) return api.assignTicket(id, employeeEmail)
+    const current = ticketsMem.find((t) => t.ticket_id === id)
+    if (current && current.status !== 'open') {
+      throw new Error(`ticket ${id} is ${current.status}, not open`)
+    }
+    return settle({
+      status: 'ok',
+      ticket: patchTicket(id, {
+        status: 'under_review',
+        assigned_employee_email: employeeEmail,
+        assigned_at: new Date().toISOString(),
+      }),
+    })
+  },
+
+  async resolveTicket(
+    id: string,
+    body: {
+      employee_email: string
+      outcome: 'resolved' | 'unresolved'
+      note: string
+      recovered_amount?: string | null
+    },
+  ) {
+    if (IS_LIVE) return api.resolveTicket(id, body)
+    return settle({
+      status: 'ok',
+      ticket: patchTicket(id, {
+        status: body.outcome,
+        resolution_outcome: body.outcome,
+        resolution_note: body.note,
+        recovered_amount: body.recovered_amount ?? '0.00',
+      }),
+    })
+  },
+
+  async raiseQuestion(
+    eventId: string,
+    body: { question: string; channel?: string; employee_email?: string | null },
+  ) {
+    if (IS_LIVE) return api.raiseQuestion(eventId, body)
+    const now = new Date().toISOString()
+    const ticket: TicketRead = {
+      ticket_id: `tkt_${String(ticketsMem.length + 1).padStart(4, '0')}`,
+      event_id: eventId,
+      reason: 'customer_question',
+      priority: 80,
+      status: 'open',
+      summary: 'Customer asked something the AI could not answer.',
+      detail: body.question,
+      assigned_employee_email: null,
+      assigned_at: null,
+      resolution_note: null,
+      resolution_outcome: null,
+      recovered_amount: '0.00',
+      created_at: now,
+      updated_at: now,
+    }
+    ticketsMem.push(ticket)
+    return settle({ status: 'ok', ticket })
   },
 
   async runPipeline(): Promise<PipelineRunResponse> {

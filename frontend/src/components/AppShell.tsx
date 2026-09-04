@@ -7,6 +7,7 @@ const NAV = [
   { to: '/queue', label: 'At-risk queue', end: false },
   { to: '/recovery', label: 'Recovery', end: false },
   { to: '/exceptions', label: 'Exceptions', end: false },
+  { to: '/attention', label: 'Urgent attention', end: false },
 ]
 
 function ThemeToggle() {

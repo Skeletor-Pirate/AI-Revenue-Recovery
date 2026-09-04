@@ -6,6 +6,33 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — Hinglish Voice Recovery: real neural TTS via Sarvam AI
+
+- **Did:** Replaced the browser `SpeechSynthesis` voice (robotic, poor Hinglish)
+  with Sarvam AI `bulbul:v3` neural TTS. New `backend/app/agents/voice_tts.py`
+  (`synthesize_script` / `synthesize_turn`, `available` gate; distinct `priya`
+  agent + `rahul` customer voices), new endpoint `GET
+  /api/events/{id}/voice/audio` in `app/api/routes.py`, config keys
+  `SARVAM_API_KEY` / `SARVAM_TTS_*` in `app/config.py` + `.env.example`.
+  Frontend: `client.getVoiceAudio` / `dataSource.getVoiceAudio`,
+  `EventVoiceAudioResponse` type, `VoiceCallDrawer.tsx` now plays per-turn WAV
+  clips and degrades to the browser voice when Sarvam is unavailable. 3 new
+  tests in `test_voice.py` (149 backend). Maps to Direction 6.
+- **Verified:** Sarvam TTS API (docs.sarvam.ai) — endpoint
+  `POST https://api.sarvam.ai/text-to-speech`, `api-subscription-key` header,
+  `target_language_code` / `speaker` / `model` fields, `bulbul:v3` speaker list,
+  base64 `audios[]` response, 1500-char cap. plan.md §11: Razorpay's own
+  Subscription Recovery Agent pairs recovery logic with a dedicated voice vendor
+  — same pattern.
+- **Docs:** architecture.md (Last updated + component table row), documentation.md
+  (Last updated, file table, endpoint table, config keys, tests, dataSource),
+  plan.md §12 deviation, AGENTS_CONTRACT.md endpoint list, readme.md Direction 6
+  + curl.
+- **Next:** pitch video; optional live-API browser pass of the voice player with a
+  real `SARVAM_API_KEY`.
+
+---
+
 ## 2026-09-04 — Full Coverage of Buildathon Directions: Mandate Sequencer, Hinglish Voice, and Promise-to-Pay (PTP)
 
 - **Did:**

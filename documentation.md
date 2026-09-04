@@ -8,7 +8,23 @@ rationale) and [CLAUDE.md](CLAUDE.md) (the project brief).
 > `architecture.md` to be updated in the same change that adds/alters a file,
 > function, class, endpoint, table, or command.
 
-Last updated: 2026-09-04 — GitHub Actions CI (`.github/workflows/ci.yml`):
+Last updated: 2026-09-04 — **Urgent human attention / review tickets**: new
+`tickets` table + `TicketStatus` / `TicketReason` enums + `Agent.HUMAN` and
+`Event.human_recovered_amount` (`app/db/store.py`); new Triage agent
+(`app/agents/triage.py`) wired into `pipeline.py` between Recovery and Audit;
+5 new endpoints (`GET /api/tickets`, `GET /api/tickets/{id}`, `POST
+/api/tickets/{id}/assign`, `POST /api/tickets/{id}/resolve`, `POST
+/api/events/{id}/raise-question`); `MetricsBlock` gains `ai_recovered`,
+`human_recovered` and a `tickets` block; generator gains `build_silent_failures`;
+frontend `/attention` page + `TicketDrawer` + ticket modals + reviewer sign-in.
+19 new triage tests, 8 new store tests, 6 new API tests (190 backend tests).
+Prior: 2026-09-04 — Sarvam AI neural TTS for the Hinglish Voice Recovery
+Agent (Direction 6): `app/agents/voice_tts.py` (`bulbul:v3`, agent/customer
+speakers), `GET /api/events/{id}/voice/audio` → base64 WAV clips per dialogue
+turn; `VoiceCallDrawer.tsx` plays them and falls back to the browser
+`SpeechSynthesis` voice when `SARVAM_API_KEY` is unset. New config keys
+`SARVAM_API_KEY` / `SARVAM_TTS_*`. 3 new voice tests (149 backend tests).
+Prior: 2026-09-04 — GitHub Actions CI (`.github/workflows/ci.yml`):
 pgvector service container + `uv sync --frozen` + both pytest chunks + frontend
 build/lint, on every push and PR. Prior: 2026-09-04 — Razorpay test-mode
 webhook listener (build-order step 9): `app/webhooks/listener.py`, `POST /webhooks/razorpay` (HMAC-SHA256
@@ -144,6 +160,9 @@ RAZORPAY BUILDATHON/
 | `OPENAI_EMBED_MODEL` | `text-embedding-3-small` | RAG embeddings when `OPENAI_API_KEY` set (else local `fastembed`) |
 | `RAG_ENABLED` / `RAG_TOP_K` / `RAG_BUCKET_CAP` / `RAG_DEDUP_DISTANCE` | `true` / `5` / `200` / `0.05` | RAG retrieval + knowledge-base curation knobs |
 | `RAZORPAY_KEY_ID` / `_KEY_SECRET` / `_WEBHOOK_SECRET` | — | webhook listener (later) |
+| `SARVAM_API_KEY` | — | Sarvam AI TTS for the Hinglish voice player (optional; no key → browser voice) |
+| `SARVAM_TTS_MODEL` / `_LANGUAGE_CODE` / `_SAMPLE_RATE` | `bulbul:v3` / `hi-IN` / `22050` | Sarvam TTS request params |
+| `SARVAM_TTS_SPEAKER_AGENT` / `_SPEAKER_CUSTOMER` | `priya` / `rahul` | Sarvam voices for the agent and simulated customer turns |
 
 ### 3.3 `backend/app/` — application code
 
@@ -163,11 +182,13 @@ RAZORPAY BUILDATHON/
 | `app/agents/recovery.py` | Recovery Agent. `run()`, `draft_outreach(intervention, event, *, settings)`, `_stable_hash(event_id)`; constants `MAX_RETRY_ATTEMPTS=3`, `MAX_ESCALATION_STAGE=3`, `COOLDOWN_HOURS=24`, `HUMAN_APPROVAL_THRESHOLD_INR=Decimal("5000")`, `SUCCESS_RATES`, `HOURS_TO_RECOVERY`, `INTERVENTIONS`. Reads `diagnosed` only. Deterministic recovered/exception; human-approval gate logs + does not execute; escalation never past stage 3. Details: `AGENTS_CONTRACT.md` §4/§7/§10. | **done, step 5** |
 | `app/agents/sequencer.py` | **Mandate Retry Sequencer (Direction 5).** `plan_retry_sequence(event)` — calendar & salary-cycle aware, rail-adaptive (UPI AutoPay / e-NACH / Card Token), NPCI 3-attempt compliant retry sequencer. | **done** |
 | `app/agents/voice.py` | **Hinglish Voice Recovery Agent (Direction 6).** `generate_hinglish_voice_script(event)` — conversational multi-turn phone dialogue and WhatsApp outreach in natural Hinglish. | **done** |
+| `app/agents/voice_tts.py` | **Hinglish Voice TTS (Direction 6).** `synthesize_script(script)` / `synthesize_turn(text, speaker)` — Sarvam AI `bulbul` neural speech per dialogue turn (agent vs customer speaker), returns base64 WAV. `available(settings)` gate; never raises — returns `available: false` with no key or on provider error. | **done** |
+| `app/agents/triage.py` | **Human Review Triage.** Pipeline stage between Recovery and Audit. `run(session)` opens one priority-scored ticket per `flagged`/`exception` event that has none (idempotent, never reopens closed work); `_classify(event, trail)` → `TicketReason` from the event's own audit trail; `_priority(reason, event)` = `PRIORITY_BASE[reason] + min(15, amount/5000)`; `_summarize(...)` writes the plain-English "why a human is needed" line; `priority_band(n)` → critical/high/medium/low. Human actions: `assign_ticket(ticket_id, employee_email)` (open → under_review, one owner), `resolve_ticket(ticket_id, employee_email, outcome, note, recovered_amount=None)` (under_review → resolved/unresolved; money bounded by what is still at risk; updates `Event.human_recovered_amount` and flips the event to `recovered` when nothing is outstanding), `raise_customer_question(event_id, question, channel, employee_email)`. `compute_ticket_metrics(session)` → the `tickets` block. Every human action writes an `agent="human"` audit row. | **done** |
 | `app/agents/ptp.py` | **Promise-to-Pay Tracker (Direction 7).** `record_promise_to_pay()`, `evaluate_ptp_status()`, `compute_ptp_metrics()` — pauses escalation, tracks commitment fulfillment/breaking, computes honor rates. | **done** |
 | `app/agents/audit.py` | Audit Agent. `compute_metrics(session) -> dict` (the MetricsBlock — pure read, what the API returns) + `run(session, *, settings=None) -> list[str]` (writes one `batch_metrics` row on the earliest event). Full-batch metrics + complete honest exception list. Details: `AGENTS_CONTRACT.md` §7/§8. | **done, step 6** |
 | `app/pipeline.py` | `run(database_url=None, *, settings=None) -> dict` chains Detection→Diagnosis→Recovery→Audit over the seeded batch and returns the MetricsBlock; argparse CLI (`--reset`, `--count`, `--seed`, `--json`) with a printed summary. | **done, step 7** |
 | `app/webhooks/__init__.py`, `app/webhooks/listener.py` | Razorpay **test-mode** webhook listener (`POST /webhooks/razorpay`), mounted in `main.py`. `verify_signature(body, signature, secret)` (HMAC-SHA256, constant-time), `razorpay_event_to_eventcreate(event)` (maps `payment.failed` / `payment_link.expired` / `invoice.expired` / `subscription.halted` → `EventCreate`; success/unknown → `None`), `AT_RISK_EVENTS`, `SUCCESS_EVENTS`. Signed → inserts a `detected` event + one `ingested_webhook_event` audit row; the pipeline then runs on it unchanged. Idempotent (dedup by event id). | **done, step 9** |
-| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/events/{id}/similar`, `/api/events/{id}/voice`, `/api/events/{id}/sequencer`, `POST /api/events/{id}/ptp`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
+| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/events/{id}/similar`, `/api/events/{id}/voice`, `/api/events/{id}/voice/audio`, `/api/events/{id}/sequencer`, `POST /api/events/{id}/ptp`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
 
 ### 3.4 `backend/tests/`
 
@@ -177,7 +198,7 @@ RAZORPAY BUILDATHON/
 | `test_store.py` | 18 tests — schema DDL, insert/update lifecycle, status queries, audit trail, FK enforcement, and the Pydantic schema layer (bounds, `extra="forbid"`, normalisation). 13 need Postgres, 5 don't. |
 | `test_generate.py` | 7 tests — batch size/coverage, validity, amount & days_overdue bounds, no-gateway-reason invariants, determinism, fraud-cluster signature, and DB seeding (1 needs Postgres). |
 | `test_sequencer.py` | 3 tests — salary window date calculation, rail detection, compliance tags, and multi-step schedule validation. |
-| `test_voice.py` | 2 tests — Hinglish prompt formatting, multi-turn dialogues, and deterministic offline script generation. |
+| `test_voice.py` | 5 tests — deterministic offline Hinglish script generation (2); Sarvam TTS: unavailable without key, synthesizes every turn with the right per-speaker voice (mocked `httpx`), degrades on provider error (3). |
 | `test_ptp.py` | 2 tests — promise recording, state transitions (`promised` → `honored`/`broken`), escalation pause, and aggregate PTP metrics. |
 
 ### 3.5 `frontend/`
@@ -194,12 +215,12 @@ RAZORPAY BUILDATHON/
 | `src/App.tsx` | Shell: header + a line that calls `api.health()` and shows the backend status. Placeholder for the dashboard pages. |
 | `src/api/client.ts` | `request<T>()` fetch wrapper (JSON, throws on non-2xx). `api.health()`, `listEvents`, `getAuditTrail`, `getSimilar`, `getVoiceScript`, `getSequencerSchedule`, `recordPTP`, `getMetrics`, `runPipeline`. |
 | `src/api/fixtures.json` | Sample of every API response shape (`events`, `eventAudit`, `pipelineRun`, `metrics`) per `AGENTS_CONTRACT.md` §8. **Regenerated from a real seed-42 pipeline run** (74 events, 40 exceptions). Default data source until `VITE_DATA_SOURCE=live`. |
-| `src/api/types.ts` | TypeScript types for the contract (`EventRead`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, `SimilarCase`, `EventSimilarResponse`, `VoiceScript`, `RetryStep`, `PTPMetrics`, response wrappers). |
-| `src/api/dataSource.ts` | The adapter every page calls: `listEvents` / `getAuditTrail` / `getMetrics` / `getSimilar` / `getVoiceScript` / `getSequencerSchedule` / `recordPTP` / `runPipeline`. |
-| `src/api/actionLabels.ts` | Plain-business-English labels for agent / status / root cause / intervention / audit action / event type. |
-| `src/components/*` | `AppShell`, `Card`, `GlassCard`, `StatTile`, `StatusPill`, `DataTable`, `ChartCard`, `AuditTimeline`, `DetailDrawer`, `SimilarCases` (RAG panel), `VoiceCallDrawer` (Hinglish audio/transcript player), `PTPModal` (Promise-to-Pay scheduler), `SequencerTimeline` (Mandate retry schedule), `Feedback`. |
-| `src/pages/*` | `Overview` (KPI tiles + charts), `Queue` (at-risk table with PTP badges + deep-linkable decision drawer), `Recovery` (analytics), `Exceptions` (fraud-cluster alert card + exception table + CSV export). |
-| `src/lib/*`, `src/charts/series.ts`, `src/hooks/useAsync.ts` | `format.ts` (Indian ₹ grouping), `csv.ts`, chart series colours, async loading hook. |
+| `src/api/types.ts` | TypeScript types for the contract (`EventRead`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, `SimilarCase`, `EventSimilarResponse`, `VoiceScript`, `RetryStep`, `PTPMetrics`, `TicketRead`, `TicketStatus`, `TicketReason`, `TicketMetrics`, `TicketsResponse`, `TicketDetailResponse`, response wrappers). |
+| `src/api/dataSource.ts` | The adapter every page calls: `listEvents` / `getAuditTrail` / `getMetrics` / `getSimilar` / `getVoiceScript` / `getVoiceAudio` / `getSequencerSchedule` / `recordPTP` / `getTickets` / `getTicket` / `assignTicket` / `resolveTicket` / `raiseQuestion` / `runPipeline`. Fixture-mode **tickets are sticky** (in-memory array) so the take→resolve sequence actually demonstrates; event fixtures stay read-only. |
+| `src/api/actionLabels.ts` | Plain-business-English labels for agent / status / root cause / intervention / audit action / event type / ticket status / ticket reason, plus `priorityBand(n)` mirroring `triage.PRIORITY_BANDS`. |
+| `src/components/*` | `AppShell`, `Card`, `GlassCard`, `StatTile`, `StatusPill`, `DataTable`, `ChartCard`, `AuditTimeline`, `DetailDrawer`, `SimilarCases` (RAG panel), `VoiceCallDrawer` (Hinglish audio/transcript player + "customer asked something we can't answer" escalation), `PTPModal` (Promise-to-Pay scheduler), `SequencerTimeline` (Mandate retry schedule), `TicketDrawer` (review ticket + case + full trail + actions), `TicketActionModals` (`AssignTicketModal` / `ResolveTicketModal` / `RaiseQuestionModal`), `TicketPills` (`PriorityPill` / `TicketStatusPill`), `ReviewerSignIn`, `Feedback`. |
+| `src/pages/*` | `Overview` (KPI tiles + charts; "Needs a human" tile links to `/attention`, "₹ recovered" splits agents vs humans), `Queue` (at-risk table with PTP badges + deep-linkable decision drawer), `Recovery` (analytics), `Exceptions` (fraud-cluster alert card + exception table + CSV export), `Attention` (priority-ordered human review queue, status/reason filters, `?ticket=` deep-linkable drawer, CSV export). |
+| `src/lib/*`, `src/charts/series.ts`, `src/hooks/useAsync.ts` | `format.ts` (Indian ₹ grouping), `csv.ts`, `session.ts` (reviewer work-email in `localStorage` — attribution, **not** auth), chart series colours + `PRIORITY_COLOR` / `TICKET_STATUS_COLOR`, async loading hook. |
 | `tsconfig.app.json` | + `resolveJsonModule` (fixtures import). `package.json` + `react-router-dom`. |
 | `tsconfig*.json`, `.oxlintrc.json`, `index.html`, `public/*` | Vite/TS defaults. |
 | `.env.example` | `VITE_API_BASE_URL=` (blank in dev). |
@@ -235,7 +256,13 @@ RAZORPAY BUILDATHON/
 | GET | `/api/events/{event_id}/audit` | `routes.event_audit` | `{event: EventRead, trail: AuditRead[]}` — 404 if unknown | **done** |
 | GET | `/api/events/{event_id}/similar` | `routes.event_similar` | `{event_id, similar: SimilarCase[]}` — RAG nearest cases; `[]` when KB/embeddings off; 404 if unknown | **done** |
 | GET | `/api/events/{event_id}/voice` | `routes.event_voice_script` | `{event_id, script: VoiceScript}` — Hinglish call dialogue & WhatsApp copy | **done (Direction 6)** |
+| GET | `/api/events/{event_id}/voice/audio` | `routes.event_voice_audio` | `{event_id, available, provider, audio_format, sample_rate, audio: [{index, speaker, audio_base64}]}` — Sarvam TTS clips; `available:false` + `audio:[]` with no `SARVAM_API_KEY` or on provider error; 404 if unknown | **done (Direction 6)** |
 | GET | `/api/events/{event_id}/sequencer` | `routes.event_retry_sequencer` | `{event_id, rail, schedule: RetryStep[]}` — Mandate retry schedule | **done (Direction 5)** |
+| GET | `/api/tickets` | `routes.list_tickets` | `{tickets: TicketRead[], count, open_count, under_review_count}` — the human review queue, priority desc then oldest first. Optional `?status=open` filter | **done** |
+| GET | `/api/tickets/{ticket_id}` | `routes.get_ticket` | `{ticket: TicketRead, event: EventRead \| null, trail: AuditRead[]}` — everything a reviewer needs in one call; 404 if unknown | **done** |
+| POST | `/api/tickets/{ticket_id}/assign` | `routes.assign_ticket` | body `{employee_email}` → `{status: "ok", ticket: TicketRead}`; 404 unknown, **409** if already taken or closed | **done** |
+| POST | `/api/tickets/{ticket_id}/resolve` | `routes.resolve_ticket` | body `{employee_email, outcome, note, recovered_amount?}` → `{status: "ok", ticket: TicketRead}`; 404 unknown, **409** on a guard violation (not under review, bad outcome, empty note, amount above what is still at risk) | **done** |
+| POST | `/api/events/{event_id}/raise-question` | `routes.raise_customer_question` | body `{question, channel?, employee_email?}` → `{status: "ok", ticket: TicketRead}`; 404 unknown event, 422 empty question / bad channel | **done** |
 | POST | `/api/events/{event_id}/ptp` | `routes.record_event_ptp` | `{status: "ok", event: EventRead}` — Schedule Promise-to-Pay date | **done (Direction 7)** |
 | POST | `/api/pipeline/run` | `routes.pipeline_run` | `{metrics: MetricsBlock, ran_at: str}` — query params `reset`, `count`, `seed` | **done** |
 | GET | `/api/metrics` | `routes.get_metrics` | `MetricsBlock` (computed from current DB state, incl. `ptp_metrics`) | **done** |
@@ -269,8 +296,11 @@ All are `enum.StrEnum` (members compare/serialize as plain strings).
 |---|---|
 | `EventType` | `failed_payment`, `abandoned_checkout`, `overdue_invoice`, `expired_mandate` |
 | `EventStatus` | `detected` → `diagnosed` → `action_taken` → `recovered` \| `exception` \| `flagged` |
-| `Agent` | `detection`, `diagnosis`, `recovery`, `triage`, `audit` |
+| `Agent` | `detection`, `diagnosis`, `recovery`, `triage`, `audit`, `human` — `human` is a real employee acting on a review ticket; their decisions are attributed to them, not laundered through an agent. |
 | `RootCause` | `insufficient_funds`, `expired_instrument`, `bank_downtime`, `auth_failure`, `card_declined`, `checkout_abandoned`, `invoice_forgotten`, `suspected_fraud`, `unknown` — Diagnosis Agent output; one Recovery intervention each (see `backend/app/agents/AGENTS_CONTRACT.md` §2). DB column `root_cause` stays `str \| None`; the enum types `EventUpdate.root_cause`. |
+| `PTPStatus` | `none`, `promised`, `honored`, `broken` |
+| `TicketStatus` | `open` → `under_review` → `resolved` \| `unresolved`. Closed is closed — a later pipeline run never reopens a ticket. |
+| `TicketReason` | `suspected_fraud`, `customer_question`, `awaiting_approval`, `exception_no_error`, `invoice_handoff`, `stalled_no_response`, `other` — why the automation handed the case to a person. Priority bases in `app/agents/triage.PRIORITY_BASE`. |
 
 ---
 
@@ -293,7 +323,31 @@ All are `enum.StrEnum` (members compare/serialize as plain strings).
 | `status` | `str` | `detected` | indexed; one of `EventStatus` |
 | `root_cause` | `str \| None` | `None` | filled by Diagnosis Agent |
 | `diagnosis_confidence` | `float \| None` | `None` | 0.0–1.0 |
-| `recovered_amount` | `Decimal` | `0` | `NUMERIC(14,2)` |
+| `recovered_amount` | `Decimal` | `0` | `NUMERIC(14,2)` — the honest **total** |
+| `human_recovered_amount` | `Decimal` | `0` | `NUMERIC(14,2)` — of the total, how much a human brought in closing a review ticket. AI-recovered is derived as `recovered_amount - human_recovered_amount`. |
+| `promised_date` | `datetime \| None` | `None` | `TIMESTAMPTZ` — Promise-to-Pay (Direction 7) |
+| `ptp_status` | `str` | `none` | indexed; one of `PTPStatus` |
+| `retry_schedule` | `list[dict] \| None` | `None` | `JSONB` — Mandate Retry Sequencer plan (Direction 5) |
+
+### `Ticket` → table `tickets`
+
+One unit of work for a human reviewer. Opened by `app/agents/triage.py`.
+
+| Column | Type | Default | Notes |
+|---|---|---|---|
+| `ticket_id` | `str` | — | **PK**, `tkt_NNNN` (sequential via `next_ticket_id`) |
+| `event_id` | `str` | — | **FK → events.event_id**, indexed |
+| `reason` | `str` | — | indexed; one of `TicketReason` |
+| `priority` | `int` | `0` | indexed; higher = more urgent. `PRIORITY_BASE[reason] + min(15, amount/5000)` |
+| `status` | `str` | `open` | indexed; one of `TicketStatus` |
+| `summary` | `str` | — | plain-English "why a human is needed", generated by `triage._summarize` |
+| `detail` | `str \| None` | `None` | extra context — e.g. the customer's question verbatim |
+| `assigned_employee_email` | `str \| None` | `None` | who took it |
+| `assigned_at` | `datetime \| None` | `None` | `TIMESTAMPTZ` |
+| `resolution_note` | `str \| None` | `None` | what the human actually did; copied verbatim into the audit row's `reasoning` |
+| `resolution_outcome` | `str \| None` | `None` | `resolved` \| `unresolved` |
+| `recovered_amount` | `Decimal` | `0` | `NUMERIC(14,2)` — money this resolution brought in |
+| `created_at` / `updated_at` | `datetime` (tz-aware) | `_utcnow()` | `updated_at` bumped on every `update_ticket` |
 
 ### `AuditLog` → table `audit_log`
 
@@ -338,6 +392,9 @@ Shared config `_STRICT = ConfigDict(extra="forbid", use_enum_values=True, valida
 | `EventRead` | `SQLModel` | response shape for `GET /api/events` | mirrors all `events` columns. |
 | `AuditCreate` | `SQLModel` | input to `log_action` | `event_id`/`action`/`reasoning` `min_length=1`; `agent: Agent`; `payload: dict \| None`. |
 | `AuditRead` | `SQLModel` | response shape for audit endpoints | mirrors all `audit_log` columns. |
+| `TicketCreate` | `SQLModel` | input to `insert_ticket` | `ticket_id`/`event_id`/`summary` `min_length=1`; `reason: TicketReason`; `priority` `ge=0`; `status: TicketStatus = open`; `detail: str \| None`. |
+| `TicketUpdate` | `SQLModel` | partial patch for `update_ticket` | every field `Optional`; `extra="forbid"`; `recovered_amount` `ge=0` and quantised. Consumed via `model_dump(exclude_unset=True)`. |
+| `TicketRead` | `SQLModel` | response shape for the `/api/tickets` surfaces | mirrors all `tickets` columns. |
 
 `ValidationError` is a subclass of `ValueError`.
 
@@ -359,6 +416,13 @@ Shared config `_STRICT = ConfigDict(extra="forbid", use_enum_values=True, valida
 | `all_events(session)` | | `list[Event]` | ordered by `created_at` |
 | `log_action(session, data=None, /, **kwargs)` | `data: AuditCreate \| None` | `int` (new row id) | the ONLY way to write the audit trail; FK-checked (phantom `event_id` → `IntegrityError`) |
 | `get_audit_trail(session, event_id=None)` | | `list[AuditLog]` | whole batch or one event, ordered by `id` |
+| `next_ticket_id(session)` | | `str` | next free `tkt_NNNN`, sequential so the queue reads chronologically |
+| `insert_ticket(session, data=None, /, **kwargs)` | `data: TicketCreate \| None` | `Ticket` | validates via `TicketCreate`; FK-checked (phantom `event_id` → `IntegrityError`) |
+| `update_ticket(session, ticket_id, data=None, /, **fields)` | `data: TicketUpdate \| None` | `Ticket` | `model_dump(exclude_unset=True)` → `setattr`; bumps `updated_at`; missing ticket → `KeyError` |
+| `get_ticket(session, ticket_id)` | | `Ticket \| None` | by PK |
+| `get_tickets(session, status=None)` | `status: str \| Iterable[str] \| None` | `list[Ticket]` | **the review queue** — ordered `priority DESC, created_at ASC` |
+| `tickets_for_event(session, event_id)` | | `list[Ticket]` | full history for one case, open and closed |
+| `open_ticket_for_event(session, event_id)` | | `Ticket \| None` | any not-yet-closed ticket; how Triage stays idempotent |
 | `add_resolved_case(session, *, event_id, event_type, raw_failure_reason, case_text, root_cause, embedding, confidence=1.0, source="pipeline")` | | `ResolvedCase` | insert one labelled case into the RAG KB; raises if pgvector off |
 | `nearest_resolved_cases(session, embedding, *, k=5, event_type=None)` | | `list[(ResolvedCase, distance)]` | **the only vector search in the codebase** — cosine distance via the HNSW index, ascending; `[]` when pgvector off |
 | `resolved_case_count(session, *, root_cause=None, event_type=None)` | | `int` | KB size, optionally per bucket |
@@ -366,7 +430,8 @@ Shared config `_STRICT = ConfigDict(extra="forbid", use_enum_values=True, valida
 | `_enable_vector(engine)` | | `bool` | `CREATE EXTENSION IF NOT EXISTS vector`; sets `VECTOR_ENABLED` (called by `init_db`/`reset_db`) |
 | `main` (`__name__=="__main__"`) | | | `init_db()` + print |
 
-Module constants: `DEFAULT_DATABASE_URL`, `MONEY = Decimal("0.01")`.
+Module constants: `DEFAULT_DATABASE_URL`, `MONEY = Decimal("0.01")`,
+`TICKET_CLOSED_STATUSES = (resolved, unresolved)`.
 
 ---
 
@@ -378,6 +443,7 @@ Module constants: `DEFAULT_DATABASE_URL`, `MONEY = Decimal("0.01")`.
 |---|---|
 | `RAZORPAY_FAILURE_REASONS` | `dict[EventType, list[str\|None]]` — real Razorpay test-mode failed-card-payment codes (verified 2026-09-03 against `razorpay.com/docs/payments/payments/test-card-details`): `insufficient_fund`, `card_expired`, `authentication_failed`, `payment_timed_out`, `card_declined`, `card_number_invalid`, `bank_not_available`, `gateway_technical_error` (failed_payment); `mandate_creation_expired/failed` (expired_mandate); `None` for abandoned_checkout & overdue_invoice |
 | `_TYPE_WEIGHTS` | 45 % failed_payment, 20 % abandoned_checkout, 20 % overdue_invoice, 15 % expired_mandate |
+| `SILENT_ID_PREFIX` / `SILENT_COUNT` | `silent_` / `2` — `build_silent_failures()` adds failed payments with **no** `raw_failure_reason`. Gateways really do return a bare failure; Detection finds no failure signal → `exception` with no root cause → Triage opens an `exception_no_error` ticket. |
 | `_MIN_AMOUNT` / `_MAX_AMOUNT` | `₹200` / `₹50000` |
 | `CSV_PATH` | `backend/data/synthetic_events.csv` |
 | `FRAUD_REASON` | `card_declined` |
@@ -439,16 +505,17 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 
 | Suite | Count | Needs Postgres | Covers |
 |---|---|---|---|
-| `test_store.py` — DDL & CRUD | 15 | yes (skip if down) | tables exist, insert/read defaults, update lifecycle + `updated_at`, backdated `created_at` insert, `RootCause` enum enforcement on `update_event`, status queries (single/multi), audit trail + JSONB round-trip, FK enforcement, `reset_db` |
-| `test_store.py` — schema layer | 5 | no | `EventCreate` bounds & rejections, normalisation (currency upper, money quantise, enum→str), `EventUpdate` `extra="forbid"` + confidence bound, `AuditCreate` non-empty reasoning, prebuilt-schema path |
-| `test_generate.py` | 9 | 1 of 9 | size/coverage, validity, amount & days_overdue bounds, no-gateway-reason invariant, `created_at` spread over the span, fraud cluster inside one sub-60-min window, determinism, fraud-cluster signature, DB seeding |
+| `test_store.py` — DDL & CRUD | 22 | yes (skip if down) | all three tables exist, insert/read defaults, update lifecycle + `updated_at`, backdated `created_at` insert, `RootCause` enum enforcement on `update_event`, status queries (single/multi), audit trail + JSONB round-trip, FK enforcement, `reset_db`; **tickets**: insert defaults, sequential ids, priority-then-age ordering, `open_ticket_for_event` ignores closed work but history survives, `update_ticket` bumps `updated_at` + `KeyError`, FK to a real event, `human_recovered_amount` default + quantise |
+| `test_store.py` — schema layer | 6 | no | `EventCreate` bounds & rejections, normalisation (currency upper, money quantise, enum→str), `EventUpdate` `extra="forbid"` + confidence bound, `AuditCreate` non-empty reasoning, prebuilt-schema path, `TicketCreate`/`TicketUpdate` strictness (bad enum, empty summary, unknown key, negative amount) |
+| `test_generate.py` | 10 | 1 of 10 | size/coverage, validity, amount & days_overdue bounds, no-gateway-reason invariant, `created_at` spread over the span, fraud cluster inside one sub-60-min window, determinism, fraud-cluster signature, **silent failures have no error code**, DB seeding |
+| `test_triage.py` | 19 | yes | one ticket per unfinished case (recovered cases get none) and the right reason for each of the five paths; queue ordered most-urgent-first with `stalled_no_response` last; priority is reason-first then amount; idempotent + never reopens closed work; `opened_review_ticket` audit row; assign moves to under_review + one-owner guard + unknown/blank-email guards; resolve records the note as the audit `reasoning`; `unresolved` is a first-class outcome; human recovery credited to `human_recovered_amount` and flips a fully-recovered event; partial recovery leaves the case open-ended; can't recover more than was at risk; every resolve guard; `raise_customer_question` records the question verbatim and outranks a stalled retry; its guards; ticket metrics over a mixed queue and an empty one |
 | `test_detection.py` | 12 | yes | `classify` verdict table, flag vs route-to-exception, net `amount_at_risk`, idempotency, only-touches-detected |
 | `test_diagnosis.py` | 26 | yes | rules map (12 params), event-type fallback, low-confidence → Claude (monkeypatched), no-key degrade, fraud-cluster flag + signature, ordinary same-reason not flagged, idempotency |
 | `test_recovery.py` | 29 | yes | per-intervention routes (7 params), salary-window retry, bank backoff, max-attempts halt, escalation cap (never stage 4), human-approval gate (executed vs not, boundary), cooldown delay, suspected-fraud refusal, never-reads-flagged, template + Claude draft, idempotency |
 | `test_audit.py` | 11 | yes (dedicated `revrec_test_aud`) | totals + money-based overall rate, all-six status keys, by-root-cause enum order, by-intervention `at_risk`/`recovered`, avg hours, complete exception list + all reason-derivation paths, fraud cluster, determinism, one `batch_metrics` row, no event mutation, empty batch |
 | `test_pipeline.py` | 6 | yes | reset→generate→run: every event terminal, fraud cluster `flagged` + not recovered, metrics over full batch, exception list populated with reasons, rerunnable/stable, `batch_metrics` row written |
 | `test_rag.py` | 10 | yes (needs pgvector) | vector extension present, degrade path when embeddings off, reference-case seeding idempotent, retrieve filtered by type + sorted, add/nearest round-trip, dedup-on-insert, skip unknown/low-confidence/fraud, bucket-cap trims oldest, `RevRecEmbeddings` wrapper, Diagnosis feeds RAG context into the LLM prompt |
-| `test_api.py` | 6 | yes (needs pgvector) | one module-scoped real pipeline run; `/health`, `/api/events`, `/api/events/{id}/audit` + 404, `MetricsBlock` shape, `POST /api/pipeline/run`, `/api/events/{id}/similar` + 404 |
+| `test_api.py` | 12 | yes (needs pgvector) | one module-scoped real pipeline run; `/health`, `/api/events`, `/api/events/{id}/audit` + 404, `MetricsBlock` shape **incl. `ai_recovered + human_recovered == total_recovered`**, `POST /api/pipeline/run`, `/api/events/{id}/similar` + 404; **tickets**: priority-ordered list + status filter + fraud on top, detail carries event + trail + 404, assign→409 double-assign→resolve unresolved with a `human` audit row, resolving with money moves `human_recovered` and leaves `ai_recovered` untouched, guards (409 resolve-before-assign, 404 unknown, 409 over-recovery), `raise-question` opens a `customer_question` ticket + 404/422 |
 | `test_webhooks.py` | 12 | 5 need Postgres | `verify_signature` roundtrip/tamper; `razorpay_event_to_eventcreate` per event type + paise→₹ + non-PII customer key + success/unknown/zero → `None`; endpoint: signed `payment.failed` inserts a `detected` event + `ingested_webhook_event` row, 401 bad signature, 503 no secret, ignores success events, idempotent on redelivery |
 | `test_llm.py` | 5 | no | provider auto-detect priority (anthropic→openrouter→openai), explicit `LLM_PROVIDER` override, `available()` / `model_label()`, `LLMUnavailable` when no key |
 

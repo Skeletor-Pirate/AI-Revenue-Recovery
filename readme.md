@@ -120,7 +120,7 @@ Agent names and outreach tone mirror Razorpay's own Agent Studio agents
 | 3 | **Failed-subscription recovery** | `EventType.EXPIRED_MANDATE` & `subscription.halted` webhooks → instant re-authorization & re-mandate links. |
 | 4 | **B2B receivables chaser** | `EventType.OVERDUE_INVOICE` → 3-stage escalation ladder (friendly reminder → formal notice → human handoff). |
 | 5 | **Mandate retry sequencer** | `app/agents/sequencer.py` → Rail-aware (UPI AutoPay / e-NACH / Cards), salary-cycle optimized retry schedule with NPCI 3-attempt limit. |
-| 6 | **Hinglish voice recovery** | `app/agents/voice.py` + `VoiceCallDrawer.tsx` → Conversational code-switched Hinglish call dialogue generator with speech synthesis and WhatsApp nudge copy. |
+| 6 | **Hinglish voice recovery** | `app/agents/voice.py` + `app/agents/voice_tts.py` + `VoiceCallDrawer.tsx` → Conversational code-switched Hinglish call dialogue, spoken with **Sarvam AI (`bulbul`) neural TTS** (separate agent/customer voices), plus WhatsApp nudge copy. Falls back to the browser voice without `SARVAM_API_KEY`. |
 | 7 | **Promise-to-pay tracker** | `app/agents/ptp.py` + `PTPModal.tsx` → Customer commitment tracking state machine (`promised` → `honored`/`broken`), escalation pause, and reliability metrics. |
 
 ---
@@ -303,6 +303,8 @@ curl -X GET http://localhost:8000/api/events/evt_01JNC000000000000000000001/sequ
 #### C. Fetch Hinglish Voice Recovery Script & WhatsApp Copy (Direction 6)
 ```bash
 curl -X GET http://localhost:8000/api/events/evt_01JNC000000000000000000001/voice
+# Spoken playback — Sarvam AI (bulbul) neural TTS clips per turn (needs SARVAM_API_KEY):
+curl -X GET http://localhost:8000/api/events/evt_01JNC000000000000000000001/voice/audio
 ```
 
 #### D. Record a Promise-to-Pay (PTP) Commitment (Direction 7)

@@ -20,7 +20,13 @@ export type RootCause =
   | 'suspected_fraud'
   | 'unknown'
 
-export type AgentName = 'detection' | 'diagnosis' | 'recovery' | 'triage' | 'audit'
+export type AgentName =
+  | 'detection'
+  | 'diagnosis'
+  | 'recovery'
+  | 'triage'
+  | 'audit'
+  | 'human' // a real employee acting on a review ticket
 
 export type PTPStatus = 'none' | 'promised' | 'honored' | 'broken'
 
@@ -39,6 +45,8 @@ export interface EventRead {
   root_cause: RootCause | null
   diagnosis_confidence: number | null
   recovered_amount: string
+  /** Of `recovered_amount`, how much a human brought in working a review ticket. */
+  human_recovered_amount?: string
   promised_date?: string | null
   ptp_status?: PTPStatus
   retry_schedule?: Array<Record<string, unknown>> | null
@@ -95,6 +103,83 @@ export interface VoiceScript {
 export interface EventVoiceResponse {
   event_id: string
   script: VoiceScript
+}
+
+// --- human review queue (backend: app/agents/triage.py) --------------------
+
+export type TicketStatus = 'open' | 'under_review' | 'resolved' | 'unresolved'
+
+export type TicketReason =
+  | 'suspected_fraud'
+  | 'customer_question'
+  | 'awaiting_approval'
+  | 'exception_no_error'
+  | 'invoice_handoff'
+  | 'stalled_no_response'
+  | 'other'
+
+export interface TicketRead {
+  ticket_id: string
+  event_id: string
+  reason: TicketReason
+  /** Higher = more urgent. Bands: >=85 critical, >=60 high, >=40 medium, else low. */
+  priority: number
+  status: TicketStatus
+  summary: string
+  detail: string | null
+  assigned_employee_email: string | null
+  assigned_at: string | null
+  resolution_note: string | null
+  resolution_outcome: 'resolved' | 'unresolved' | null
+  recovered_amount: string
+  created_at: string
+  updated_at: string
+}
+
+export interface TicketsResponse {
+  tickets: TicketRead[]
+  count: number
+  open_count: number
+  under_review_count: number
+}
+
+export interface TicketDetailResponse {
+  ticket: TicketRead
+  event: EventRead | null
+  trail: AuditRead[]
+}
+
+export interface TicketMutationResponse {
+  status: string
+  ticket: TicketRead
+}
+
+export interface TicketMetrics {
+  total: number
+  open: number
+  under_review: number
+  resolved: number
+  unresolved: number
+  needs_attention: number
+  by_reason: Record<TicketReason, number>
+  oldest_open_hours: number
+  resolution_rate: number
+  human_recovered: string
+}
+
+export interface VoiceAudioClip {
+  index: number
+  speaker: string
+  audio_base64: string
+}
+
+export interface EventVoiceAudioResponse {
+  event_id: string
+  available: boolean
+  provider: string
+  audio_format: string
+  sample_rate: number
+  audio: VoiceAudioClip[]
 }
 
 export interface RetryStep {
@@ -157,7 +242,10 @@ export interface PTPMetrics {
 
 export interface MetricsBlock {
   total_at_risk: string
+  /** The honest total. `ai_recovered + human_recovered` always equals this. */
   total_recovered: string
+  ai_recovered?: string
+  human_recovered?: string
   overall_recovery_rate: number
   event_count: number
   by_root_cause: ByRootCause[]
@@ -167,6 +255,7 @@ export interface MetricsBlock {
   exceptions: ExceptionRow[]
   fraud_cluster: FraudCluster
   ptp_metrics?: PTPMetrics
+  tickets?: TicketMetrics
 }
 
 export interface PipelineRunResponse {

@@ -188,6 +188,11 @@ Repo is a monorepo: FastAPI **backend/** + React **frontend/**. See
 - **Amount threshold for human approval** — any discount offer or aggressive escalation above a set ₹ amount requires human sign-off before executing (simulate this as a flag in the audit log, not a UI, if time is short).
 - **The fraud-pattern triage halt** — if a case shows signs of being part of a cluster (same failure reason, same amount pattern, tight time clustering across multiple "customers"), the Diagnosis Agent must reclassify it as `flagged` instead of `recoverable`, and the Recovery Agent must refuse to act on it. Log the reasoning clearly. **This is our deliberate "one failure handled gracefully" demo moment** — build a synthetic case that triggers this, and make sure the demo shows the system catching its own initial misclassification and correcting course.
 
+> **2026-09-04 — built past "not a UI, if time is short":** the "auto-flag for
+> human review" line above and the approval-threshold flag are now a real,
+> bounded workflow — `app/agents/triage.py` + the `/attention` dashboard page.
+> See §12.
+
 ---
 
 ## 7. Synthetic dataset requirements
@@ -371,6 +376,16 @@ This project is being built *for* Razorpay, evaluated *by* Razorpay engineers, o
 - **Deterministic recovery outcome (2026-09-04):** whether a recovery attempt
   succeeds is decided by `sha256(event_id) % 100 < p` against a per-intervention
   success rate, not an RNG — repeatable demo + tests. `AGENTS_CONTRACT.md` §7.
+- **Hinglish voice — real TTS (2026-09-04):** Direction 6's `VoiceCallDrawer`
+  played its call script through the browser `SpeechSynthesis` voice, which
+  sounds robotic and mangles Hinglish. Added `app/agents/voice_tts.py` —
+  **Sarvam AI `bulbul:v3`** neural TTS (an Indian model built for code-mixed
+  Hindi/English), a distinct voice for the agent (`priya`) and the simulated
+  customer (`rahul`). New endpoint `GET /api/events/{id}/voice/audio` returns a
+  base64 WAV per dialogue turn; the drawer plays them in sequence and **falls
+  back to the browser voice** when `SARVAM_API_KEY` is unset or Sarvam errors —
+  the agents and pipeline are unchanged. Mirrors Razorpay's own Subscription
+  Recovery Agent, which pairs recovery logic with a dedicated voice vendor.
 - **Dashboard glass fallback (2026-09-04):** `GlassCard` uses a frosted
   `backdrop-blur` surface, not the full liquid-glass refraction library; can be
   upgraded later without an API change.

@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     razorpay_key_secret: str | None = None
     razorpay_webhook_secret: str | None = None
 
+    # --- Sarvam AI text-to-speech (app/agents/voice_tts.py). Optional: with no
+    #     key the /voice/audio endpoint returns {available: false} and the
+    #     dashboard falls back to the browser SpeechSynthesis voice. ---
+    sarvam_api_key: str | None = None
+    sarvam_tts_model: str = "bulbul:v3"
+    sarvam_tts_language_code: str = "hi-IN"
+    sarvam_tts_speaker_agent: str = "priya"       # Razorpay recovery agent voice
+    sarvam_tts_speaker_customer: str = "rahul"    # simulated customer voice
+    sarvam_tts_sample_rate: int = 22050
+
 
 @lru_cache
 def get_settings() -> Settings:
