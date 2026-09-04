@@ -69,6 +69,20 @@ const columns: Column<EventRead>[] = [
     csv: (e) => e.root_cause ?? '',
   },
   {
+    key: 'ptp_status',
+    header: 'Promise-to-Pay',
+    render: (e) =>
+      e.ptp_status && e.ptp_status !== 'none' ? (
+        <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md font-medium capitalize bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+          🤝 {e.ptp_status}
+        </span>
+      ) : (
+        <span className="text-ink-muted text-xs">—</span>
+      ),
+    sortValue: (e) => e.ptp_status ?? 'none',
+    csv: (e) => e.ptp_status ?? 'none',
+  },
+  {
     key: 'attempts_so_far',
     header: 'Attempts',
     numeric: true,

@@ -1,0 +1,15 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov
+.env
+.env.*
+!.env.example
+tests
+data/synthetic_events.csv
+*.log
+.DS_Store

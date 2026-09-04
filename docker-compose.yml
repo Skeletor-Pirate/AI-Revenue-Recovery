@@ -1,16 +1,16 @@
-# PostgreSQL + pgvector for the AI Revenue Recovery pipeline.
+# PostgreSQL + pgvector + FastAPI Backend + React Frontend
 #
-# This is the ACTIVE datastore path (Docker Desktop works on this machine).
-# The image is `pgvector/pgvector` — stock Postgres 17 with the `vector`
-# extension available, which the RAG layer (app/rag.py) needs and stock
-# Postgres / the old embedded binary could not provide.
+# Usage:
+#   Full Stack:    docker compose up -d --build
+#   Database only: docker compose up -d db
+#   Stop:          docker compose down
+#   Wipe:          docker compose down -v
 #
-#   Start:  docker compose up -d
-#   Stop:   docker compose down          (keeps data)
-#   Wipe:   docker compose down -v       (deletes the volume, forces re-seed)
-#
-# scripts/pg.ps1 (zonky embedded Postgres) is kept as a no-extension fallback
-# for machines without Docker; RAG is disabled there.
+# Access points:
+#   Frontend Dashboard:  http://localhost:3000
+#   Backend API Docs:    http://localhost:8000/docs
+#   Postgres (pgvector): localhost:5432
+
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -20,7 +20,7 @@ services:
       POSTGRES_PASSWORD: revrec
       POSTGRES_DB: revrec
     ports:
-      - "5432:5432"          # host:container -- reach it at localhost:5432
+      - "5432:5432"
     volumes:
       - revrec_pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
@@ -29,6 +29,37 @@ services:
       interval: 3s
       timeout: 3s
       retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: revrec_backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://revrec:revrec@db:5432/revrec
+      FRONTEND_ORIGIN: http://localhost:3000
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: revrec_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   revrec_pgdata:

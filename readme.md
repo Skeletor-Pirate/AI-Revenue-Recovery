@@ -1,6 +1,7 @@
 # AI Revenue Recovery — Razorpay AI Buildathon, Track 03
 
 [![CI](https://github.com/Space-Fighter/AI-Revenue-Recovery/actions/workflows/ci.yml/badge.svg)](https://github.com/Space-Fighter/AI-Revenue-Recovery/actions/workflows/ci.yml)
+[![CD](https://github.com/Space-Fighter/AI-Revenue-Recovery/actions/workflows/cd.yml/badge.svg)](https://github.com/Space-Fighter/AI-Revenue-Recovery/actions/workflows/cd.yml)
 
 **Find revenue that's slipping away and win it back.** A four-agent pipeline that
 detects revenue at risk, diagnoses the root cause, runs a **bounded** recovery
@@ -14,12 +15,21 @@ exception list.
 
 ## Quickstart
 
+### Option A: One-Command Full Stack (Docker Compose)
+```bash
+docker compose up -d --build
+# Dashboard: http://localhost:3000
+# Backend API & Docs: http://localhost:8000/docs
+# PostgreSQL (pgvector): localhost:5432
+```
+
+### Option B: Local Developer Mode
 Prereqs: **Docker**, **Python 3.11+** with [`uv`](https://docs.astral.sh/uv/),
 **Node 20+**.
 
 ```bash
 # 1. database (PostgreSQL 17 + pgvector)
-docker compose up -d
+docker compose up -d db
 
 # 2. backend
 cd backend
@@ -43,10 +53,7 @@ uv run pytest -q tests/test_pipeline.py
 # → 146 passed.  Frontend:  cd frontend && npm run build && npm run lint
 ```
 
-CI runs exactly this on every push and PR — a `pgvector/pgvector:pg17` service
-container, `uv sync --frozen`, both pytest chunks, and the frontend
-build + lint ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). No API
-keys — every LLM / embedding call is mocked in the suite.
+CI runs on every push/PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)), and CD builds & publishes multi-stage container images to GHCR on `main` push and release tags ([`.github/workflows/cd.yml`](.github/workflows/cd.yml)). No API keys needed for testing.
 
 Full run / test / deploy detail is in [**Running, testing & deploying**](#running-testing--deploying) below.
 
@@ -101,6 +108,20 @@ Failure codes were verified against Razorpay's
 [test-card details](https://razorpay.com/docs/payments/payments/test-card-details).
 Agent names and outreach tone mirror Razorpay's own Agent Studio agents
 (Abandoned Cart Conversion, Subscription Recovery, Dispute Responder).
+
+---
+
+## Buildathon Track 03 Directions Covered (7 of 7)
+
+| # | Direction | Implementation in this repo |
+|---|---|---|
+| 1 | **Payment degradation → root cause → recovery action** | **Core Pipeline**: Real failure codes mapped to 9 distinct interventions via rules + pgvector RAG + Claude. |
+| 2 | **Checkout drop-off recovery** | `EventType.ABANDONED_CHECKOUT` → personalized nudge + bounded discount (gated at ₹5,000 threshold). |
+| 3 | **Failed-subscription recovery** | `EventType.EXPIRED_MANDATE` & `subscription.halted` webhooks → instant re-authorization & re-mandate links. |
+| 4 | **B2B receivables chaser** | `EventType.OVERDUE_INVOICE` → 3-stage escalation ladder (friendly reminder → formal notice → human handoff). |
+| 5 | **Mandate retry sequencer** | `app/agents/sequencer.py` → Rail-aware (UPI AutoPay / e-NACH / Cards), salary-cycle optimized retry schedule with NPCI 3-attempt limit. |
+| 6 | **Hinglish voice recovery** | `app/agents/voice.py` + `VoiceCallDrawer.tsx` → Conversational code-switched Hinglish call dialogue generator with speech synthesis and WhatsApp nudge copy. |
+| 7 | **Promise-to-pay tracker** | `app/agents/ptp.py` + `PTPModal.tsx` → Customer commitment tracking state machine (`promised` → `honored`/`broken`), escalation pause, and reliability metrics. |
 
 ---
 
@@ -166,6 +187,157 @@ synthetic batch ─▶ Detection ─▶ Diagnosis ─▶ Recovery ─▶ Audit
 - Full detail: [`architecture.md`](architecture.md) ·
   [`documentation.md`](documentation.md) ·
   [`backend/app/agents/AGENTS_CONTRACT.md`](backend/app/agents/AGENTS_CONTRACT.md).
+
+## 🧪 Judge & Evaluator Testing Guide
+
+We have made it seamless for judges to test the AI Revenue Recovery Engine across **4 different evaluation methods** depending on your preferred workflow:
+
+```mermaid
+flowchart TD
+    subgraph TestingMethods [4 Ways to Test & Evaluate]
+        M1[Method 1: Interactive Dashboard UI]
+        M2[Method 2: Live Razorpay Test Webhooks]
+        M3[Method 3: Direct API / cURL Ingestion]
+        M4[Method 4: CLI Pipeline & Automated Test Suite]
+    end
+
+    M1 --> Engine[AI Revenue Recovery Engine]
+    M2 --> Engine
+    M3 --> Engine
+    M4 --> Engine
+```
+
+---
+
+### Method 1: Interactive UI Testing (Fastest & Visual)
+
+The React dashboard offers an end-to-end interactive playground for all 7 Buildathon directions:
+
+1. **Start the Stack**:
+   ```bash
+   # Option A: One-command Docker Compose
+   docker compose up -d --build
+   # Open http://localhost:3000
+
+   # Option B: Local Dev Mode
+   # Backend: http://localhost:8000/docs
+   # Frontend: http://localhost:5173
+   ```
+2. **Trigger the AI Pipeline Live**:
+   - In the top header bar, click **"Run Pipeline"**.
+   - This executes the 4-agent pipeline (`POST /api/pipeline/run`), triaging pending events, querying pgvector RAG for diagnosis, selecting recovery interventions, and updating KPI metrics in real time.
+3. **Inspect the Deep Decision Drawer**:
+   - Navigate to `/queue` and click on any transaction row.
+   - **Root Cause & Confidence**: View AI diagnosis with confidence percentage and reasoning.
+   - **RAG Evidence**: Inspect the nearest historical cases retrieved from pgvector.
+   - **Direction 5 (Mandate Retry Sequencer)**: Click the **"Sequencer Timeline"** tab to view rail-aware (UPI AutoPay / e-NACH / Cards) retry schedules, salary-cycle alignment (1st of month at 09:30 IST), and NPCI 3-attempt limits.
+   - **Direction 6 (Hinglish Voice Recovery)**: Click **"Generate Hinglish Call"** to inspect the turn-by-turn dialogue, click **"Play Call Audio"** to hear synthesized voice playback via the browser Web Speech API, and copy WhatsApp nudge templates.
+   - **Direction 7 (Promise-to-Pay Tracker)**: Click **"Record Promise to Pay"**, pick a date and note, and observe how the engine automatically pauses escalation workflows and updates the queue status badge (`🤝 promised`).
+4. **Explore Other Views**:
+   - `/` (Executive Overview & Financial KPIs)
+   - `/recovery` (Recovery Funnel & Payment Rail Analytics)
+   - `/exceptions` (Fraud Cluster Triage Halt & Honest Exception List)
+   - `/audit` (Immutable, chronological log of every single agent decision)
+
+---
+
+### Method 2: Live Razorpay Test Webhook Testing (Real Ecosystem Ingestion)
+
+Test real-time event ingestion directly from your Razorpay Test Mode account:
+
+1. **Configure Webhook Secret**:
+   In `backend/.env`, set:
+   ```env
+   RAZORPAY_WEBHOOK_SECRET=your_test_webhook_secret_here
+   ```
+2. **Expose Local Backend** (if testing locally):
+   ```bash
+   ngrok http 8000
+   ```
+3. **Register Webhook in Razorpay Dashboard**:
+   - Go to **Razorpay Dashboard ➔ Settings ➔ Webhooks** (Test Mode).
+   - URL: `https://<your-ngrok-subdomain>.ngrok.io/webhooks/razorpay` (or `https://<your-host>/webhooks/razorpay`).
+   - Secret: Matches `RAZORPAY_WEBHOOK_SECRET`.
+   - Subscribed Events: `payment.failed`, `payment_link.expired`, `invoice.expired`, `subscription.halted`.
+4. **Trigger a Test Payment Failure**:
+   - Make a test payment using a declining card or UPI failure from Razorpay Checkout.
+   - The webhook listener (`app/webhooks/listener.py`) verifies the HMAC-SHA256 signature and ingests it into Postgres with an `rzp_` ID prefix.
+   - Watch it appear in `/queue` and get autonomously diagnosed and recovered!
+
+---
+
+### Method 3: Direct API / cURL Ingestion (Manual Testing)
+
+Judges can fire test payloads directly into the backend endpoints using `curl` or Postman:
+
+#### A. Ingest a Simulated Razorpay Webhook Event
+```bash
+# Note: When RAZORPAY_WEBHOOK_SECRET is set in .env, include the X-Razorpay-Signature header
+curl -X POST http://localhost:8000/webhooks/razorpay \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event": "payment.failed",
+    "payload": {
+      "payment": {
+        "entity": {
+          "id": "pay_test_001",
+          "amount": 299900,
+          "currency": "INR",
+          "status": "failed",
+          "error_code": "BAD_REQUEST_ERROR",
+          "error_reason": "insufficient_fund",
+          "email": "rohit.sharma@example.com",
+          "contact": "+919876543210",
+          "notes": {"plan": "Pro Annual SaaS"}
+        }
+      }
+    }
+  }'
+```
+
+#### B. Fetch Mandate Retry Sequencer Schedule (Direction 5)
+```bash
+curl -X GET http://localhost:8000/api/events/evt_01JNC000000000000000000001/sequencer
+```
+
+#### C. Fetch Hinglish Voice Recovery Script & WhatsApp Copy (Direction 6)
+```bash
+curl -X GET http://localhost:8000/api/events/evt_01JNC000000000000000000001/voice
+```
+
+#### D. Record a Promise-to-Pay (PTP) Commitment (Direction 7)
+```bash
+curl -X POST http://localhost:8000/api/events/evt_01JNC000000000000000000001/ptp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "promised_date": "2026-09-10T10:00:00Z",
+    "notes": "Customer confirmed salary credit on 10th morning"
+  }'
+```
+
+---
+
+### Method 4: CLI Pipeline & Automated Test Suite (Full Verification)
+
+Run the full pipeline and test suites directly from your terminal:
+
+```bash
+# 1. Reseed 74 synthetic events and run full 4-agent recovery batch from CLI
+cd backend
+uv run python -m app.pipeline --reset
+
+# 2. Output raw financial MetricsBlock JSON
+uv run python -m app.pipeline --reset --json
+
+# 3. Run full backend pytest suite (147 tests covering all agents, RAG, and APIs)
+uv run pytest tests/test_sequencer.py tests/test_voice.py tests/test_ptp.py -v
+uv run pytest -q --ignore=tests/test_pipeline.py
+
+# 4. Run frontend linter and production build
+cd ../frontend
+npm run lint    # oxlint (0 errors, 0 warnings)
+npm run build   # tsc -b && vite build (100% clean production bundle)
+```
 
 ---
 

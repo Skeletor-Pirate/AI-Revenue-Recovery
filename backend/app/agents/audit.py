@@ -57,6 +57,14 @@ def _empty_block() -> dict[str, Any]:
         "status_breakdown": {s.value: 0 for s in EventStatus},
         "exceptions": [],
         "fraud_cluster": {"flagged_event_ids": [], "reason": DEFAULT_FRAUD_REASON},
+        "ptp_metrics": {
+            "total_ptp_recorded": 0,
+            "total_honored": 0,
+            "total_broken": 0,
+            "active_promised": 0,
+            "honor_rate": 0.0,
+            "amount_recovered_ptp": "0.00",
+        },
     }
 
 
@@ -209,6 +217,8 @@ def compute_metrics(session: store.Session) -> dict[str, Any]:
             fraud_reason = row.reasoning
             break
 
+    from app.agents.ptp import compute_ptp_metrics
+
     return {
         "total_at_risk": _money(total_at_risk),
         "total_recovered": _money(total_recovered),
@@ -220,6 +230,7 @@ def compute_metrics(session: store.Session) -> dict[str, Any]:
         "status_breakdown": status_breakdown,
         "exceptions": exceptions,
         "fraud_cluster": {"flagged_event_ids": flagged_ids, "reason": fraud_reason},
+        "ptp_metrics": compute_ptp_metrics(session),
     }
 
 

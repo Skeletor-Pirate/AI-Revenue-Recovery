@@ -6,6 +6,31 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — Full Coverage of Buildathon Directions: Mandate Sequencer, Hinglish Voice, and Promise-to-Pay (PTP)
+
+- **Did:**
+  - **Direction 5 (Mandate Retry Sequencer):** `app/agents/sequencer.py` — rail-aware (UPI AutoPay / e-NACH / Tokenized Cards), salary-cycle optimized multi-step retry schedule enforcing NPCI 3-attempt limits.
+  - **Direction 6 (Hinglish Voice Recovery Agent):** `app/agents/voice.py` + `frontend/src/components/VoiceCallDrawer.tsx` — culturally natural code-switched Hinglish multi-turn call scripts with browser audio speech synthesis and WhatsApp follow-up copy.
+  - **Direction 7 (Promise-to-Pay Tracker):** `app/agents/ptp.py` + `frontend/src/components/PTPModal.tsx` — customer commitment state machine (`promised` → `honored`/`broken`), escalation pausing, 24h grace period evaluation, and PTP reliability metrics.
+  - **API & UI Integration:** Added `/api/events/{id}/voice`, `/api/events/{id}/sequencer`, `POST /api/events/{id}/ptp`, and integrated them into the React dashboard decision drawer and at-risk queue.
+  - **Tests:** Added `test_sequencer.py`, `test_voice.py`, `test_ptp.py` (7 tests). **All 147 backend tests green**, frontend build/oxlint 0 errors.
+- **Docs:** `documentation.md`, `architecture.md`, `readme.md`, this entry.
+- **Next:** Push changes; pitch video recording.
+
+---
+
+## 2026-09-04 — Multi-Stage Dockerfiles & GitHub Actions CD (GHCR)
+
+- **Did:** 
+  - `backend/Dockerfile` (`ghcr.io/astral-sh/uv:0.5.24-python3.11-bookworm-slim` multi-stage builder → `python:3.11-slim` runtime + curl healthcheck on `:8000/health`) + `backend/.dockerignore`.
+  - `frontend/Dockerfile` (`node:20-alpine` builder → `nginx:alpine-slim` runtime on port 80) + `frontend/nginx.conf` (SPA routing + reverse proxy to `/api/`, `/health`, `/webhooks/`) + `frontend/.dockerignore`.
+  - `docker-compose.yml` updated to full-stack orchestration (`db` + `backend` + `frontend` on `:3000`, `:8000`, `:5432`) with backward-compatible single service commands.
+  - `.github/workflows/cd.yml` — automated container build & push to GitHub Container Registry (`ghcr.io`) using Docker Buildx and GitHub Actions layer caching (`type=gha`), triggering on `push` to `main`, release tags (`v*`), and manual dispatch.
+- **Docs:** `readme.md` (CD badge & full-stack docker run commands), `documentation.md` (file references, commands, updated status), `architecture.md` (runtime topology & tech stack), this entry.
+- **Next:** push to repository; verify CI and CD runs on GitHub Actions; record pitch video.
+
+---
+
 ## 2026-09-04 — GitHub Actions CI
 
 - **Did:** `.github/workflows/ci.yml`. **backend** job — `pgvector/pgvector:pg17`

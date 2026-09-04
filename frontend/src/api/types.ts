@@ -22,6 +22,8 @@ export type RootCause =
 
 export type AgentName = 'detection' | 'diagnosis' | 'recovery' | 'triage' | 'audit'
 
+export type PTPStatus = 'none' | 'promised' | 'honored' | 'broken'
+
 export interface EventRead {
   event_id: string
   event_type: string
@@ -37,6 +39,9 @@ export interface EventRead {
   root_cause: RootCause | null
   diagnosis_confidence: number | null
   recovered_amount: string
+  promised_date?: string | null
+  ptp_status?: PTPStatus
+  retry_schedule?: Array<Record<string, unknown>> | null
 }
 
 export interface AuditRead {
@@ -74,6 +79,42 @@ export interface EventSimilarResponse {
   similar: SimilarCase[]
 }
 
+export interface DialogueTurn {
+  speaker: string
+  text: string
+  emotion?: string
+}
+
+export interface VoiceScript {
+  script_summary: string
+  dialogue_turns: DialogueTurn[]
+  estimated_duration_sec: number
+  whatsapp_followup_hinglish: string
+}
+
+export interface EventVoiceResponse {
+  event_id: string
+  script: VoiceScript
+}
+
+export interface RetryStep {
+  step_number: number
+  rail: string
+  scheduled_time: string
+  action: string
+  channel: string
+  pre_debit_notification: boolean
+  expected_recovery_prob: number
+  rationale: string
+  compliance_tag: string
+}
+
+export interface EventSequencerResponse {
+  event_id: string
+  rail: string
+  schedule: RetryStep[]
+}
+
 export interface ByRootCause {
   root_cause: RootCause
   at_risk: string
@@ -105,6 +146,15 @@ export interface FraudCluster {
   reason: string
 }
 
+export interface PTPMetrics {
+  total_ptp_recorded: number
+  total_honored: number
+  total_broken: number
+  active_promised: number
+  honor_rate: number
+  amount_recovered_ptp: string
+}
+
 export interface MetricsBlock {
   total_at_risk: string
   total_recovered: string
@@ -113,9 +163,10 @@ export interface MetricsBlock {
   by_root_cause: ByRootCause[]
   by_intervention: ByIntervention[]
   avg_hours_to_recovery: number
-  status_breakdown: Record<string, number>
+  status_breakdown: Record<EventStatus, number>
   exceptions: ExceptionRow[]
   fraud_cluster: FraudCluster
+  ptp_metrics?: PTPMetrics
 }
 
 export interface PipelineRunResponse {

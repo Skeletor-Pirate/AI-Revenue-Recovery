@@ -8,7 +8,11 @@ Diagrams and design rationale. Companion to
 > the same change that alters the architecture, data model, agent flow, or
 > runtime topology.
 
-Last updated: 2026-09-04 — Razorpay test-mode webhook listener
+Last updated: 2026-09-04 — Extended Capabilities: Direction 5 (Mandate Retry Sequencer: `app/agents/sequencer.py`),
+Direction 6 (Hinglish Voice Recovery Agent: `app/agents/voice.py` + `VoiceCallDrawer`), Direction 7 (Promise-to-Pay Tracker: `app/agents/ptp.py` + `PTPModal`).
+Prior: 2026-09-04 — Multi-stage Docker containerization & GitHub Actions CD
+(`.github/workflows/cd.yml` → GHCR image registry; `backend/Dockerfile` + `frontend/Dockerfile` + `nginx.conf` + full-stack `docker-compose.yml`).
+Prior: 2026-09-04 — Razorpay test-mode webhook listener
 (`app/webhooks/listener.py`, `POST /webhooks/razorpay`) as a second event
 source into Detection; pipeline diagram node `WH` → done. Prior: 2026-09-04 —
 RAG knowledge base (`app/rag.py`: pgvector
@@ -106,19 +110,23 @@ exposes the store + pipeline over REST; the React dashboard renders it.
 
 ```mermaid
 flowchart LR
-    subgraph dev [Developer machine]
-        subgraph fe [frontend/ — Vite dev server :5173]
-            REACT[React 19 + Tailwind v4<br/>src/App.tsx]
-            CLIENT[src/api/client.ts]
-            REACT --> CLIENT
+    subgraph local [Deployment options]
+        subgraph fullstack [Full-Stack Docker Compose :3000]
+            NGINX[Nginx 1.27 Alpine<br/>frontend/Dockerfile]
+            REACT_DIST[React 19 Static Assets<br/>dist/]
+            API_CTR[FastAPI Container<br/>uvicorn :8000]
+            NGINX --> REACT_DIST
+            NGINX -- "/api, /health, /webhooks" --> API_CTR
         end
-        subgraph be [backend/ — uvicorn :8000]
-            FASTAPI[FastAPI app<br/>app/main.py]
-            STOREPY[app/db/store.py<br/>SQLModel + psycopg 3]
-            FASTAPI --> STOREPY
+
+        subgraph dev [Developer mode]
+            FE_DEV[Vite Dev Server :5173]
+            BE_DEV[uvicorn :8000]
+            FE_DEV -- "Vite proxy" --> BE_DEV
         end
-        subgraph pg [PostgreSQL 17 + pgvector — Docker container revrec_db]
-            PG[("pgvector/pgvector:pg17 :5432")]
+
+        subgraph pg [PostgreSQL 17 + pgvector — revrec_db :5432]
+            PG[("pgvector/pgvector:pg17")]
             DB1[(revrec)]
             DB2[(revrec_test)]
             PG --- DB1
@@ -129,15 +137,14 @@ flowchart LR
     subgraph ext [external, optional]
         LLM["LLM API<br/>Anthropic / OpenRouter / OpenAI"]
         EMB["embeddings<br/>OpenAI or local fastembed"]
+        GHCR["GitHub Container Registry<br/>ghcr.io/space-fighter/..."]
     end
 
-    CLIENT -- "/api, /health (Vite proxy)" --> FASTAPI
-    STOREPY -- "postgresql+psycopg://revrec@localhost:5432" --> PG
-    FASTAPI -.-> LLM
-    FASTAPI -.-> EMB
-
-    note["scripts/pg.ps1 (embedded PG, no extensions) is the no-Docker<br/>fallback — RAG disabled there"]
-    pg -.- note
+    API_CTR --> PG
+    BE_DEV --> PG
+    API_CTR -.-> LLM
+    API_CTR -.-> EMB
+    GHCR -. "docker pull" .-> fullstack
 ```
 
 ---
@@ -260,7 +267,10 @@ sequenceDiagram
 | RAG knowledge base | `app/rag.py` + `store.resolved_cases` ✅ | embed a case, retrieve nearest classified cases (pgvector HNSW); grow the KB after each run (curated, bounded) | no-op without pgvector / embeddings; the only vector search is `store.nearest_resolved_cases` |
 | LLM client | `app/llm.py` ✅ | `chat()` + `embed()`, provider auto-detected | never raises; deterministic fallback when unconfigured |
 | Recovery Agent | `app/agents/recovery.py` ✅ | root-cause-specific intervention; draft outreach; **enforce stopping rules** (max attempts, max escalation, cooldown, amount gate) | bounded; never reads `flagged`; human-approval flag above ₹5,000 (logged, not executed); deterministic outcome |
-| Audit / Reporting | `app/agents/audit.py` ✅ | `compute_metrics` rolls `audit_log` + `events` into the MetricsBlock; `run` writes one `batch_metrics` row | computed over the full batch; exception list complete, never hidden |
+| Mandate Retry Sequencer | `app/agents/sequencer.py` ✅ | intelligent multi-step mandate & subscription retry schedule (Direction 5) | rail-aware (UPI AutoPay / e-NACH / Card Token), calendar & salary cycle optimized, NPCI 3-attempt limit |
+| Hinglish Voice Recovery | `app/agents/voice.py` ✅ | conversational multi-turn phone call scripts & WhatsApp copy in natural Hinglish (Direction 6) | natural code-switching, empathetic tone, offline deterministic fallback scripts |
+| Promise-to-Pay (PTP) Tracker | `app/agents/ptp.py` ✅ | commitment state machine: pause escalation, track honor/breakage, metrics (Direction 7) | pauses automated contact during commitment window; records fulfillment & breakage to audit trail |
+| Audit / Reporting | `app/agents/audit.py` ✅ | `compute_metrics` rolls `audit_log` + `events` into the MetricsBlock; `run` writes one `batch_metrics` row | computed over the full batch; exception list complete, never hidden; includes PTP metrics |
 | Pipeline | `app/pipeline.py` ✅ | chains agents 3–6 into one run; returns the MetricsBlock | argparse CLI + printed summary |
 | API | `app/main.py`, `app/api/*` ✅ | REST over store + pipeline (`/api/events`, `/api/events/{id}/audit`, `/api/metrics`, `/api/pipeline/run`) | CORS to frontend only |
 | Dashboard | `frontend/src/pages/*` ✅ (fixtures; live via `VITE_DATA_SOURCE`) | at-risk queue, decision trail, charts, exception list, fraud-cluster alert | mirrors Razorpay's plain-English tone |
@@ -314,3 +324,6 @@ sequenceDiagram
 | Backend tooling | uv · pytest · httpx |
 | Frontend | React 19 · Vite · TypeScript · Tailwind CSS v4 · Recharts |
 | Frontend tooling | npm · oxlint |
+| Containerization | Docker multi-stage (`python:3.11-slim` + `uv` backend, `nginx:alpine-slim` frontend, `pgvector:pg17` DB) |
+| Orchestration | Docker Compose (full stack `:3000` / `:8000` / `:5432`) |
+| CI / CD | GitHub Actions (`ci.yml` pytest & build/lint; `cd.yml` GHCR multi-stage image push with Buildx cache) |

@@ -17,8 +17,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from pydantic import BaseModel, Field
+
 from app import rag
-from app.agents import audit
+from app.agents import audit, ptp, sequencer, voice
 from app.config import get_settings
 from app.data import generate
 from app.db import store
@@ -26,6 +28,11 @@ from app.db.store import AuditRead, EventRead
 from app.pipeline import run as run_pipeline
 
 router = APIRouter(prefix="/api", tags=["revenue-recovery"])
+
+
+class PTPRequest(BaseModel):
+    promised_date: datetime = Field(description="Target date by which customer committed to pay")
+    notes: str | None = Field(default=None, description="Optional call notes or conversation summary")
 
 
 @router.get("/events")
@@ -61,6 +68,51 @@ def event_similar(event_id: str) -> dict[str, Any]:
             raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
         similar = rag.retrieve_similar(session, event, settings=get_settings())
         return {"event_id": event_id, "similar": similar}
+
+
+@router.get("/events/{event_id}/voice")
+def event_voice_script(event_id: str) -> dict[str, Any]:
+    """Hinglish Voice Recovery: Generate or fetch conversational phone script."""
+    with store.get_session() as session:
+        event = store.get_event(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        script = voice.generate_hinglish_voice_script(event, settings=get_settings())
+        return {"event_id": event_id, "script": script}
+
+
+@router.get("/events/{event_id}/sequencer")
+def event_retry_sequencer(event_id: str) -> dict[str, Any]:
+    """Mandate Retry Sequencer: Multi-step rail-adaptive retry schedule."""
+    with store.get_session() as session:
+        event = store.get_event(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        schedule = event.retry_schedule or sequencer.plan_retry_sequence(event)
+        return {
+            "event_id": event_id,
+            "rail": sequencer._detect_rail(event),
+            "schedule": schedule,
+        }
+
+
+@router.post("/events/{event_id}/ptp")
+def record_event_ptp(event_id: str, body: PTPRequest) -> dict[str, Any]:
+    """Promise-to-Pay (PTP) Tracker: Record promise-to-pay date and pause escalation."""
+    with store.get_session() as session:
+        try:
+            updated_event = ptp.record_promise_to_pay(
+                session,
+                event_id=event_id,
+                promised_date=body.promised_date,
+                notes=body.notes,
+            )
+            return {
+                "status": "ok",
+                "event": EventRead.model_validate(updated_event, from_attributes=True),
+            }
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
 
 
 @router.get("/metrics")

@@ -110,11 +110,12 @@ RAZORPAY BUILDATHON/
 | `documentation.md` | This file. |
 | `architecture.md` | Mermaid diagrams (pipeline, ERD, lifecycle, runtime), component responsibilities, design-decision log. |
 | `scripts/pg.ps1` | **Active Postgres path.** Manages a self-contained PostgreSQL 17 (zonky embedded-postgres binaries from Maven Central) under `%LOCALAPPDATA%\revrec-pg` — no Docker, no admin. Subcommands: `install` (download + `initdb` + create `revrec` & `revrec_test`), `start`, `stop`, `restart`, `status` (via `pg_ctl`). Port 5432, superuser `revrec`, `trust` auth (localhost dev only). |
-| `docker-compose.yml` | **Active datastore.** service `db` = `pgvector/pgvector:pg17` (stock PG 17 + the `vector` extension the RAG layer needs), container `revrec_db`, creds `revrec`/`revrec`, port 5432, volume `revrec_pgdata`, healthcheck, runs `scripts/init-db.sql` on first start. `docker compose up -d`. |
+| `docker-compose.yml` | **Full-stack orchestration:** `db` (`pgvector/pgvector:pg17` datastore), `backend` (`FastAPI` app on `:8000`), `frontend` (`Nginx` SPA + proxy on `:3000`). Run full stack via `docker compose up -d --build` or DB alone via `docker compose up -d db`. |
 | `scripts/init-db.sql` | First-container-start init: `CREATE DATABASE` for `revrec_test` + the three parallel-build test DBs, and `CREATE EXTENSION vector` in every DB. |
 | `scripts/init-test-db.sql` | Legacy single-test-DB init — superseded by `init-db.sql`, no longer referenced by `docker-compose.yml`. |
 | `.gitignore` | Ignores `__pycache__`, `.venv`, `.pytest_cache`, `.env`, `node_modules`, `frontend/dist`, `**/data/synthetic_events.csv`. |
 | `.github/workflows/ci.yml` | GitHub Actions CI. **backend** job: `pgvector/pgvector:pg17` service container, `uv sync --frozen`, creates `revrec_test`, runs `pytest -q --ignore=tests/test_pipeline.py` then `pytest -q tests/test_pipeline.py`. **frontend** job: `npm ci`, `npm run lint`, `npm run build`. Triggers: push to `main`, all PRs, manual. No secrets — every LLM/embedding call is mocked. |
+| `.github/workflows/cd.yml` | GitHub Actions CD. Multi-stage image build & push to GitHub Container Registry (`ghcr.io`) for both `backend` and `frontend`. Triggers: push to `main`, release tags (`v*`), manual dispatch. Uses Buildx + GitHub Actions layer caching (`type=gha`). |
 | `.claude/skills/` | Claude Code project skills (dev tooling, not shipped): `build-workflow` (mandatory per-task workflow wrapper: check out/update plan.md → verify against Razorpay sources (link list + how-to embedded in its Step 1) → keep architecture.md diagrams current → documentation.md → history.md brief; absorbed the former `razorpay-source-check` skill), `scroll-craft` + `liquid-glass` (vendored UI skills), `glass-scroll-3d` (composite scroll+R3F+glass, for the welcome page), `frontend` (one skill, four modes — `scroll-craft` + `liquid-glass` vendored UI guides, `glass-scroll-3d` composite scroll+R3F+glass for the welcome page, `revrec-dashboard` dashboard UI: tokens + chart catalog + data-table/timeline components, combines dataviz + liquid-glass; each mode is a `GUIDE.md` under `.claude/skills/frontend/<mode>/`). |
 | `plan.md` | The project brief (formerly `CLAUDE.md`; renamed). `CLAUDE.md` is now a short operational guide pointing here. |
 | `readme.md` | **The submission README** (build-order step 10): the-bar mapping, root-cause→intervention table, the fraud-cluster demo moment, run instructions + example output, and the "what broke / what we'd do next" writeup. |
@@ -123,6 +124,8 @@ RAZORPAY BUILDATHON/
 
 | File | Purpose |
 |---|---|
+| `Dockerfile` | Multi-stage production container (`ghcr.io/astral-sh/uv:0.5.24-python3.11-bookworm-slim` builder → `python:3.11-slim-bookworm` runtime) with `uv sync --frozen --no-dev`, curl healthcheck on `/health`, port 8000. |
+| `.dockerignore` | Excludes `.venv`, `__pycache__`, `.pytest_cache`, `.env`, tests, data CSVs from Docker context. |
 | `pyproject.toml` | Project `razorpay-revenue-recovery-backend`, `requires-python >=3.11`. Deps: `anthropic`, `sqlmodel`, `psycopg[binary]`, `razorpay`, `fastapi`, `uvicorn[standard]`, `pydantic-settings`, `pandas`, `python-dotenv`, `faker`, `httpx`, **`pgvector`** (SQLAlchemy `Vector` type), **`fastembed`** (local embeddings, ONNX — no torch), **`numpy`**, **`langchain-core`** (`Embeddings` interface). Dev: `pytest`. `[tool.uv] package = false`. `pythonpath = ["."]`. |
 | `uv.lock` | Resolved dependency lockfile (committed). |
 | `.env.example` | Template for `backend/.env`. Keys below. |
@@ -158,10 +161,13 @@ RAZORPAY BUILDATHON/
 | `app/agents/detection.py` | Detection Agent. `run(session, *, settings=None) -> list[str]` + pure `classify(event) -> (bool, str)`. Flags at-risk revenue (`flagged_at_risk`); routes obvious non-recoverables to `exception` (`routed_to_exception`). Idempotent. Details: `AGENTS_CONTRACT.md` §1/§3/§7. | **done, step 3** |
 | `app/agents/diagnosis.py` | Diagnosis Agent. `run()`, pure `classify(event) -> (RootCause, conf, matched_reason, reasoning)`, `find_fraud_clusters(events)`, isolated `claude_classify(event, settings)`. Fraud triage first (→ `flagged`/`suspected_fraud`), then rules map, then Claude fallback when rules conf ≤ 0.5 on free text. Details: `AGENTS_CONTRACT.md` §2/§5/§6. | **done, step 4** |
 | `app/agents/recovery.py` | Recovery Agent. `run()`, `draft_outreach(intervention, event, *, settings)`, `_stable_hash(event_id)`; constants `MAX_RETRY_ATTEMPTS=3`, `MAX_ESCALATION_STAGE=3`, `COOLDOWN_HOURS=24`, `HUMAN_APPROVAL_THRESHOLD_INR=Decimal("5000")`, `SUCCESS_RATES`, `HOURS_TO_RECOVERY`, `INTERVENTIONS`. Reads `diagnosed` only. Deterministic recovered/exception; human-approval gate logs + does not execute; escalation never past stage 3. Details: `AGENTS_CONTRACT.md` §4/§7/§10. | **done, step 5** |
+| `app/agents/sequencer.py` | **Mandate Retry Sequencer (Direction 5).** `plan_retry_sequence(event)` — calendar & salary-cycle aware, rail-adaptive (UPI AutoPay / e-NACH / Card Token), NPCI 3-attempt compliant retry sequencer. | **done** |
+| `app/agents/voice.py` | **Hinglish Voice Recovery Agent (Direction 6).** `generate_hinglish_voice_script(event)` — conversational multi-turn phone dialogue and WhatsApp outreach in natural Hinglish. | **done** |
+| `app/agents/ptp.py` | **Promise-to-Pay Tracker (Direction 7).** `record_promise_to_pay()`, `evaluate_ptp_status()`, `compute_ptp_metrics()` — pauses escalation, tracks commitment fulfillment/breaking, computes honor rates. | **done** |
 | `app/agents/audit.py` | Audit Agent. `compute_metrics(session) -> dict` (the MetricsBlock — pure read, what the API returns) + `run(session, *, settings=None) -> list[str]` (writes one `batch_metrics` row on the earliest event). Full-batch metrics + complete honest exception list. Details: `AGENTS_CONTRACT.md` §7/§8. | **done, step 6** |
 | `app/pipeline.py` | `run(database_url=None, *, settings=None) -> dict` chains Detection→Diagnosis→Recovery→Audit over the seeded batch and returns the MetricsBlock; argparse CLI (`--reset`, `--count`, `--seed`, `--json`) with a printed summary. | **done, step 7** |
 | `app/webhooks/__init__.py`, `app/webhooks/listener.py` | Razorpay **test-mode** webhook listener (`POST /webhooks/razorpay`), mounted in `main.py`. `verify_signature(body, signature, secret)` (HMAC-SHA256, constant-time), `razorpay_event_to_eventcreate(event)` (maps `payment.failed` / `payment_link.expired` / `invoice.expired` / `subscription.halted` → `EventCreate`; success/unknown → `None`), `AT_RISK_EVENTS`, `SUCCESS_EVENTS`. Signed → inserts a `detected` event + one `ingested_webhook_event` audit row; the pipeline then runs on it unchanged. Idempotent (dedup by event id). | **done, step 9** |
-| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/events/{id}/similar`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
+| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/events/{id}/similar`, `/api/events/{id}/voice`, `/api/events/{id}/sequencer`, `POST /api/events/{id}/ptp`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
 
 ### 3.4 `backend/tests/`
 
@@ -170,24 +176,29 @@ RAZORPAY BUILDATHON/
 | `conftest.py` | Fixtures: `_require_postgres` (session-scoped, non-autouse, `pytest.skip` if DB unreachable, 3s connect timeout), `test_database_url`, `session` (per-test `reset_db` + `Session`, depends on `_require_postgres`). |
 | `test_store.py` | 18 tests — schema DDL, insert/update lifecycle, status queries, audit trail, FK enforcement, and the Pydantic schema layer (bounds, `extra="forbid"`, normalisation). 13 need Postgres, 5 don't. |
 | `test_generate.py` | 7 tests — batch size/coverage, validity, amount & days_overdue bounds, no-gateway-reason invariants, determinism, fraud-cluster signature, and DB seeding (1 needs Postgres). |
+| `test_sequencer.py` | 3 tests — salary window date calculation, rail detection, compliance tags, and multi-step schedule validation. |
+| `test_voice.py` | 2 tests — Hinglish prompt formatting, multi-turn dialogues, and deterministic offline script generation. |
+| `test_ptp.py` | 2 tests — promise recording, state transitions (`promised` → `honored`/`broken`), escalation pause, and aggregate PTP metrics. |
 
 ### 3.5 `frontend/`
 
 | File | Purpose |
 |---|---|
+| `Dockerfile` | Multi-stage production container (`node:20-alpine` builder → `nginx:alpine-slim` runtime). Builds static assets and serves via Nginx on port 80. |
+| `nginx.conf` | Production Nginx configuration: SPA routing (`try_files $uri $uri/ /index.html`), reverse proxy to backend `/api/`, `/health`, and `/webhooks/`, gzip compression, and static asset caching. |
+| `.dockerignore` | Excludes `node_modules`, `dist`, `.env*`, and git files from Docker context. |
 | `package.json` | React 19, `react-dom`, `recharts`; dev: `@tailwindcss/vite`, `tailwindcss`, `vite`, `typescript`, `@vitejs/plugin-react`, `oxlint`, `@types/*`. Scripts: `dev`, `build` (`tsc -b && vite build`), `lint`, `preview`. |
 | `vite.config.ts` | Plugins `react()`, `tailwindcss()`. Dev server on `5173`, proxies `/api` and `/health` → `http://localhost:8000`. |
 | `src/index.css` | `@import "tailwindcss";` — Tailwind v4 single-line setup. |
 | `src/main.tsx` | Mounts `<App/>` into `#root` under `<StrictMode>`. |
 | `src/App.tsx` | Shell: header + a line that calls `api.health()` and shows the backend status. Placeholder for the dashboard pages. |
-| `src/api/client.ts` | `request<T>()` fetch wrapper (JSON, throws on non-2xx). `api.health()`. Base URL from `VITE_API_BASE_URL` (blank in dev → proxy). |
+| `src/api/client.ts` | `request<T>()` fetch wrapper (JSON, throws on non-2xx). `api.health()`, `listEvents`, `getAuditTrail`, `getSimilar`, `getVoiceScript`, `getSequencerSchedule`, `recordPTP`, `getMetrics`, `runPipeline`. |
 | `src/api/fixtures.json` | Sample of every API response shape (`events`, `eventAudit`, `pipelineRun`, `metrics`) per `AGENTS_CONTRACT.md` §8. **Regenerated from a real seed-42 pipeline run** (74 events, 40 exceptions). Default data source until `VITE_DATA_SOURCE=live`. |
-| `src/api/types.ts` | TypeScript types for the contract (`EventRead`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, `SimilarCase`, `EventSimilarResponse`, response wrappers). |
-| `src/api/dataSource.ts` | The adapter every page calls: `listEvents` / `getAuditTrail` / `getMetrics` / `runPipeline`. Reads `fixtures.json` by default; `VITE_DATA_SOURCE=live` routes to `client.ts` → `/api`. One env var, no component changes. |
+| `src/api/types.ts` | TypeScript types for the contract (`EventRead`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, `SimilarCase`, `EventSimilarResponse`, `VoiceScript`, `RetryStep`, `PTPMetrics`, response wrappers). |
+| `src/api/dataSource.ts` | The adapter every page calls: `listEvents` / `getAuditTrail` / `getMetrics` / `getSimilar` / `getVoiceScript` / `getSequencerSchedule` / `recordPTP` / `runPipeline`. |
 | `src/api/actionLabels.ts` | Plain-business-English labels for agent / status / root cause / intervention / audit action / event type. |
-| `src/api/client.ts` | fetch wrapper; now also `listEvents`, `getAuditTrail`, `getMetrics`, `runPipeline`. |
-| `src/components/*` | `AppShell` (nav + theme toggle), `Card` / `GlassCard` (frosted `backdrop-blur`), `StatTile`, `StatusPill`, `DataTable`, `ChartCard` + `HBar` (Recharts bar only), `AuditTimeline` + `PayloadViewer`, `DetailDrawer`, `SimilarCases` (RAG "similar past cases" panel in the drawer), `Feedback` (`Skeleton` / `EmptyState` / `ErrorState`). |
-| `src/pages/*` | `Overview` (KPI tiles + 2 charts), `Queue` (at-risk table + deep-linkable `?case=` decision-trail drawer), `Recovery` (analytics), `Exceptions` (fraud-cluster alert card + honest exception table + CSV export). |
+| `src/components/*` | `AppShell`, `Card`, `GlassCard`, `StatTile`, `StatusPill`, `DataTable`, `ChartCard`, `AuditTimeline`, `DetailDrawer`, `SimilarCases` (RAG panel), `VoiceCallDrawer` (Hinglish audio/transcript player), `PTPModal` (Promise-to-Pay scheduler), `SequencerTimeline` (Mandate retry schedule), `Feedback`. |
+| `src/pages/*` | `Overview` (KPI tiles + charts), `Queue` (at-risk table with PTP badges + deep-linkable decision drawer), `Recovery` (analytics), `Exceptions` (fraud-cluster alert card + exception table + CSV export). |
 | `src/lib/*`, `src/charts/series.ts`, `src/hooks/useAsync.ts` | `format.ts` (Indian ₹ grouping), `csv.ts`, chart series colours, async loading hook. |
 | `tsconfig.app.json` | + `resolveJsonModule` (fixtures import). `package.json` + `react-router-dom`. |
 | `tsconfig*.json`, `.oxlintrc.json`, `index.html`, `public/*` | Vite/TS defaults. |
@@ -223,8 +234,11 @@ RAZORPAY BUILDATHON/
 | GET | `/api/events` | `routes.list_events` | `{events: EventRead[], count: int}` | **done** |
 | GET | `/api/events/{event_id}/audit` | `routes.event_audit` | `{event: EventRead, trail: AuditRead[]}` — 404 if unknown | **done** |
 | GET | `/api/events/{event_id}/similar` | `routes.event_similar` | `{event_id, similar: SimilarCase[]}` — RAG nearest cases; `[]` when KB/embeddings off; 404 if unknown | **done** |
+| GET | `/api/events/{event_id}/voice` | `routes.event_voice_script` | `{event_id, script: VoiceScript}` — Hinglish call dialogue & WhatsApp copy | **done (Direction 6)** |
+| GET | `/api/events/{event_id}/sequencer` | `routes.event_retry_sequencer` | `{event_id, rail, schedule: RetryStep[]}` — Mandate retry schedule | **done (Direction 5)** |
+| POST | `/api/events/{event_id}/ptp` | `routes.record_event_ptp` | `{status: "ok", event: EventRead}` — Schedule Promise-to-Pay date | **done (Direction 7)** |
 | POST | `/api/pipeline/run` | `routes.pipeline_run` | `{metrics: MetricsBlock, ran_at: str}` — query params `reset`, `count`, `seed` | **done** |
-| GET | `/api/metrics` | `routes.get_metrics` | `MetricsBlock` (computed from current DB state) | **done** |
+| GET | `/api/metrics` | `routes.get_metrics` | `MetricsBlock` (computed from current DB state, incl. `ptp_metrics`) | **done** |
 | POST | `/webhooks/razorpay` | `listener.razorpay_webhook` | 503 no secret · 401 bad signature · 200 `{status: accepted\|ignored, …}` | **done, step 9** |
 
 `main.py` mounts `app.api.router` (prefix `/api`). `EventRead` / `AuditRead`
@@ -402,8 +416,9 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 
 | Task | Command | From |
 |---|---|---|
-| Start Postgres (pgvector) | `docker compose up -d` | repo root |
-| Stop Postgres | `docker compose down` (`-v` wipes the volume → re-seed) | repo root |
+| Run full stack (DB + Backend + Frontend) | `docker compose up -d --build` (Dashboard `:3000`, API `:8000`, DB `:5432`) | repo root |
+| Start Postgres only (pgvector) | `docker compose up -d db` | repo root |
+| Stop containers | `docker compose down` (`-v` wipes the volume → re-seed) | repo root |
 | _(No-Docker fallback — RAG disabled)_ | `powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 install` then `… start` | repo root |
 | Install backend deps | `uv sync` | `backend/` |
 | Create local env | `cp .env.example .env` | `backend/` |

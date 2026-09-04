@@ -488,7 +488,24 @@ def _process_event(
         )
         return
 
-    store.update_event(session, event.event_id, status=EventStatus.ACTION_TAKEN)
+    from app.agents.sequencer import plan_retry_sequence
+    from app.db.store import PTPStatus
+
+    # Attach intelligent retry schedule
+    schedule = plan_retry_sequence(event)
+    store.update_event(session, event.event_id, status=EventStatus.ACTION_TAKEN, retry_schedule=schedule)
+
+    # If customer has an active promise-to-pay, respect the commitment window
+    if getattr(event, "ptp_status", None) == PTPStatus.PROMISED:
+        store.log_action(
+            session,
+            event_id=event.event_id,
+            agent=RECOVERY,
+            action="ptp_paused_escalation",
+            reasoning=f"Active Promise-to-Pay window in effect until {event.promised_date}. Automated contact paused.",
+            payload={"promised_date": event.promised_date.isoformat() if event.promised_date else None},
+        )
+        return
 
     if rc not in INTERVENTIONS:
         store.log_action(

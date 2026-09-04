@@ -81,6 +81,14 @@ class EventStatus(StrEnum):
     FLAGGED = "flagged"
 
 
+class PTPStatus(StrEnum):
+    """Promise-To-Pay commitment lifecycle states."""
+    NONE = "none"
+    PROMISED = "promised"
+    HONORED = "honored"
+    BROKEN = "broken"
+
+
 class Agent(StrEnum):
     DETECTION = "detection"
     DIAGNOSIS = "diagnosis"
@@ -140,6 +148,14 @@ class Event(SQLModel, table=True):
     diagnosis_confidence: float | None = None     # 0.0 - 1.0
     recovered_amount: Decimal = Field(
         default=Decimal("0"), max_digits=14, decimal_places=2
+    )
+    promised_date: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    ptp_status: str = Field(default=PTPStatus.NONE, index=True)
+    retry_schedule: list[dict[str, Any]] | None = Field(
+        default=None, sa_column=Column(JSONB, nullable=True)
     )
 
 
@@ -222,6 +238,9 @@ class EventCreate(SQLModel):
     #   generator sets it to spread the batch over time. When omitted the
     #   table default (_utcnow) applies. `updated_at` follows `created_at`
     #   on insert when this is set.
+    promised_date: datetime | None = None
+    ptp_status: PTPStatus = PTPStatus.NONE
+    retry_schedule: list[dict[str, Any]] | None = None
 
     @field_validator("currency")
     @classmethod
@@ -251,6 +270,9 @@ class EventUpdate(SQLModel):
     root_cause: RootCause | None = None
     diagnosis_confidence: float | None = Field(default=None, ge=0, le=1)
     recovered_amount: Decimal | None = Field(default=None, ge=0, max_digits=14)
+    promised_date: datetime | None = None
+    ptp_status: PTPStatus | None = None
+    retry_schedule: list[dict[str, Any]] | None = None
 
     @field_validator("amount", "recovered_amount")
     @classmethod
@@ -275,6 +297,9 @@ class EventRead(SQLModel):
     root_cause: str | None
     diagnosis_confidence: float | None
     recovered_amount: Decimal
+    promised_date: datetime | None = None
+    ptp_status: str = PTPStatus.NONE
+    retry_schedule: list[dict[str, Any]] | None = None
 
 
 class AuditCreate(SQLModel):
