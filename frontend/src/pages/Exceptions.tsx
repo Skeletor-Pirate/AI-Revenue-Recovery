@@ -98,9 +98,10 @@ export function Exceptions() {
             </h2>
             <p className="mt-1 text-sm text-ink-soft">{fc.reason}</p>
             <p className="mt-2 text-sm text-ink-soft">
-              Diagnosis re-classified this cluster as <strong>suspected fraud</strong>.
-              The Recovery agent refused to act on any of these payments — no
-              retries, no outreach — and escalated them for a human to review.
+              {'Diagnosis re-classified this cluster as '}
+              <span className="font-semibold text-ink">suspected fraud</span>
+              {'. The Recovery agent refused to act on any of these payments '}
+              {'(no retries, no outreach) and escalated them for a human to review.'}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {fc.flagged_event_ids.map((id) => (
