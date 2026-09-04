@@ -41,6 +41,20 @@ exception list.
 | `suspected_fraud` | set by triage only | **Recovery refuses to act** |
 | `unknown` | classifier + LLM both low-confidence | Honest exception |
 
+### Retrieval-augmented diagnosis (RAG)
+
+When the rules classifier can't place a free-text failure reason, the Diagnosis
+Agent doesn't just guess. It embeds the case, retrieves the nearest
+**already-classified** cases from a pgvector knowledge base (`resolved_cases`,
+HNSW index), and gives them to the LLM as few-shot examples. The knowledge base
+is **curated and bounded** — near-duplicate inserts are skipped and each
+`(root_cause, event_type)` bucket is capped, the same discipline as the stopping
+rules. All vector search sits behind one function (`store.nearest_resolved_cases`),
+so it lifts to a dedicated store if the curated KB ever outgrows one Postgres
+instance. Retrieved cases also surface in the dashboard's decision-trail drawer.
+RAG is optional: with no pgvector or no embeddings backend it's a no-op and
+Diagnosis falls back to rules + LLM.
+
 Failure codes were verified against Razorpay's
 [test-card details](https://razorpay.com/docs/payments/payments/test-card-details).
 Agent names and outreach tone mirror Razorpay's own Agent Studio agents
@@ -69,12 +83,20 @@ The dashboard surfaces this as a red alert card on `/exceptions`.
 
 ```
 synthetic batch ─▶ Detection ─▶ Diagnosis ─▶ Recovery ─▶ Audit
-(app/data/generate.py)   │          │ (+ fraud    │ (+ stopping   │ (metrics +
-                         │          │   triage)   │   rules)      │  exceptions)
-                         ▼          ▼             ▼               ▼
-              one Postgres store — backend/app/db/store.py — IS the audit trail
-                         │
-              FastAPI (app/api/*) ─▶ React dashboard (frontend/)
+(app/data/generate.py)   │       │ (+ fraud     │ (+ stopping  │ (metrics +
+                         │       │   triage,    │   rules)     │  exceptions)
+                         │       │   + RAG)     │              │
+                         ▼       ▼              ▼              ▼
+        one Postgres store (pgvector) — backend/app/db/store.py — IS the audit trail
+                         │              │
+              FastAPI (app/api/*)   resolved_cases  ◀── app/rag.py (retrieve /
+                         │          (HNSW index)          grow the knowledge base)
+                         ▼
+              React dashboard (frontend/)
+
+        app/llm.py — one client for chat + embeddings (Anthropic / OpenRouter /
+        OpenAI / local); every LLM/embedding call degrades to a deterministic
+        fallback when unconfigured.
 ```
 
 - **`store.py` is the only interface to Postgres.** No raw SQL anywhere else.
@@ -93,13 +115,16 @@ synthetic batch ─▶ Detection ─▶ Diagnosis ─▶ Recovery ─▶ Audit
 
 ## Run it
 
-Postgres is a local process (Docker needs WSL2, absent on the build machine).
+Postgres runs as the `pgvector/pgvector` container (the RAG layer needs the
+`vector` extension).
 
-```powershell
-# repo root — once, then start each session
-powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 install
-powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 start
+```bash
+# repo root
+docker compose up -d          # pgvector/pgvector:pg17 on :5432
 ```
+
+No Docker? `scripts/pg.ps1 install && scripts/pg.ps1 start` runs an embedded
+Postgres instead — everything works except RAG (no extension support).
 
 ```bash
 # backend/ (uv, Python 3.11+)
@@ -120,9 +145,14 @@ npm run dev                                      # :5173 — renders the bundled
 
 **The LLM is optional.** Set `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` **or**
 `OPENAI_API_KEY` (auto-detected in that order; `app/llm.py`) to enable the
-Diagnosis free-text fallback and Claude-drafted outreach copy. With no key,
+Diagnosis free-text fallback and the drafted outreach copy. With no key,
 Diagnosis falls back to `unknown` and Recovery uses plain-English templates —
 everything runs offline. OpenRouter's default model is a Claude model.
+
+**RAG embeddings** use `OPENAI_API_KEY` (`text-embedding-3-small`) when set,
+otherwise a bundled local model (`fastembed` / `all-MiniLM-L6-v2`, ~90 MB, one
+download). OpenRouter has no embeddings endpoint, so an OpenRouter-only setup
+uses the local model.
 
 ### Example output (`uv run python -m app.pipeline`, seed 42)
 
@@ -147,6 +177,9 @@ exception list (40 — honest, not cherry-picked): …
 | 5 | **Parallel agent builds stomped the test DB** — five builders each running pytest, whose per-test fixture does `DROP TABLE`. | Each builder ran against a dedicated database (`revrec_test_diag` / `_rec` / `_aud`); merge + CI use `revrec_test`. |
 | 6 | **Human-approval-gated events showed "no reason recorded"** in the exception list — the Audit agent only read `routed_to_exception` / `halted_stopping_rule`. | Audit now also derives the reason from the `awaiting_human_approval` payload (`proposed_action` + `threshold`). |
 | 7 | **The full pytest run OOM-killed** a single process (batch-reseeding integration tests). | Documented running the suite in two chunks; a real fix (transaction-rollback fixtures / a smaller integration batch) is on the list below. |
+| 8 | **"Docker is unavailable on this machine"** — the original docs asserted Docker needs WSL2 and Win 11 Home can't run it. Docker Desktop was actually installed and WSL2 works. | Switched Postgres to the `pgvector/pgvector` container so pgvector is native; kept `scripts/pg.ps1` as a no-Docker fallback. |
+| 9 | **pgvector / hnswlib wouldn't install** on the embedded Postgres / without MS C++ Build Tools. | pgvector is a Postgres *extension*, not a pip package — solved by #8 (container image ships it). |
+| 10 | **A `reset_db` table-ordering bug** surfaced when the new `resolved_cases` table joined the metadata — an explicit reversed drop list broke intermittently across the pipeline tests. | `reset_db` now passes `tables=None` (all, dependency-ordered) when pgvector is on; the explicit list is only used to *exclude* `resolved_cases` on the fallback path. |
 
 ## What we'd do next
 
@@ -156,6 +189,9 @@ exception list (40 — honest, not cherry-picked): …
 - **Partial recovery** — today an attempt recovers the full amount or nothing.
 - **Pincode / segment risk** in the exception list, echoing Razorpay Sprint 2026's
   RTO-by-pincode scoring.
+- **Scale the RAG store** — pgvector on Aurora read replicas, then a dedicated
+  vector store (Vespa / OpenSearch kNN) once the *curated* knowledge base
+  crosses ~10M entries. One function changes (`store.nearest_resolved_cases`).
 - **Faster tests** — transaction-rollback fixtures instead of `reset_db` per test;
   a 12-event integration batch.
 - **Live LLM demo** — a recorded run with an LLM key set so the free-text

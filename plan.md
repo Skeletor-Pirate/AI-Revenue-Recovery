@@ -324,9 +324,12 @@ This project is being built *for* Razorpay, evaluated *by* Razorpay engineers, o
   dashboard (`frontend/src/pages/*`) against a real-run `fixtures.json` (8).
   `AGENTS_CONTRACT.md` (+ §10 Q&A resolutions) is the frozen cross-agent
   contract. 113 backend tests green.
-- **Next:** step 9 (Razorpay test-mode webhook listener, stretch) and step 10
-  (README + "what broke" writeup); browser end-to-end pass of the dashboard on
-  the live API.
+- **Also done (2026-09-04):** multi-provider LLM client (`app/llm.py` —
+  Anthropic / OpenRouter / OpenAI); RAG knowledge base (`app/rag.py`, pgvector
+  HNSW) wired into Diagnosis + a "similar past cases" dashboard panel; Postgres
+  moved to the `pgvector/pgvector` Docker container. 134 backend tests green.
+- **Next:** step 9 (Razorpay test-mode webhook listener, stretch); browser
+  end-to-end pass of the RAG panel on live API; pitch video.
 - **Failure-code correction (2026-09-03):** §5 / §7 name `raw_failure_reason`
   values illustratively. Verified against
   `razorpay.com/docs/payments/payments/test-card-details`, the generator now
@@ -341,6 +344,22 @@ This project is being built *for* Razorpay, evaluated *by* Razorpay engineers, o
   fraud-cluster signature can keep its "tight time clustering" (≤ 60 min)
   clause. `insert_event` honours a supplied `created_at` (and matches
   `updated_at` to it).
+- **RAG knowledge base (2026-09-04):** §4 didn't anticipate retrieval. Added
+  `app/rag.py` — a `resolved_cases` pgvector table (HNSW index) the Diagnosis
+  Agent retrieves from before the LLM classifies an unrecognised free-text
+  failure reason ("here's how similar past failures were diagnosed"). The KB is
+  **curated + bounded**: near-duplicate inserts skipped, each
+  `(root_cause, event_type)` bucket capped. All vector search is behind one
+  function (`store.nearest_resolved_cases`) so it lifts to a dedicated store
+  later. Embeddings via `llm.embed()` — OpenAI `text-embedding-3-small` if a key
+  is set, else local `fastembed` (`all-MiniLM-L6-v2`, 384-d), else RAG is a
+  no-op and Diagnosis is unchanged. NOT using LangGraph. LangChain only for the
+  `Embeddings` wrapper. Deps: `pgvector`, `fastembed`, `numpy`, `langchain-core`.
+- **Docker is available after all (2026-09-04):** earlier docs said Docker
+  needs WSL2 and is unavailable here — **wrong**. Docker Desktop is installed
+  and WSL2 works. Postgres now runs as the `pgvector/pgvector:pg17` container
+  (`docker compose up -d`) so pgvector is native. `scripts/pg.ps1` (embedded
+  binary) is kept as a no-extension fallback — RAG is disabled on that path.
 - **Provider-agnostic LLM (2026-09-04):** §4 pins the `anthropic` SDK. The LLM
   is now behind `app/llm.py`, which also supports **OpenRouter** and **OpenAI**
   (OpenAI-compatible REST). Auto-detects `anthropic → openrouter → openai`;

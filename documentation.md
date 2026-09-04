@@ -8,7 +8,14 @@ rationale) and [CLAUDE.md](CLAUDE.md) (the project brief).
 > `architecture.md` to be updated in the same change that adds/alters a file,
 > function, class, endpoint, table, or command.
 
-Last updated: 2026-09-04 — provider-agnostic LLM client (app/llm.py: Anthropic / OpenRouter / OpenAI). Prior: 2026-09-04 — Phase B + C of the agent-team build: all four agent
+Last updated: 2026-09-04 — RAG knowledge base: `app/rag.py` (pgvector
+`resolved_cases` table + HNSW index) wired into the Diagnosis Agent's free-text
+fallback; `app/llm.embed()` (OpenAI or local `fastembed`); `GET
+/api/events/{id}/similar`; "Similar past cases" dashboard panel; Postgres moved
+to the `pgvector/pgvector` Docker container (the "Docker unavailable" note was
+wrong). 134 backend tests. Prior: 2026-09-04 — provider-agnostic LLM client
+(app/llm.py: Anthropic / OpenRouter / OpenAI). Prior: 2026-09-04 — Phase B + C
+of the agent-team build: all four agent
 modules built and merged (`detection` / `diagnosis` / `recovery` / `audit`,
 build-order steps 3–6), `app/pipeline.py` chaining them (step 7), `app/api/*`
 routers to the frozen contract mounted in `main.py` (step 8), `fixtures.json`
@@ -98,8 +105,9 @@ RAZORPAY BUILDATHON/
 | `documentation.md` | This file. |
 | `architecture.md` | Mermaid diagrams (pipeline, ERD, lifecycle, runtime), component responsibilities, design-decision log. |
 | `scripts/pg.ps1` | **Active Postgres path.** Manages a self-contained PostgreSQL 17 (zonky embedded-postgres binaries from Maven Central) under `%LOCALAPPDATA%\revrec-pg` — no Docker, no admin. Subcommands: `install` (download + `initdb` + create `revrec` & `revrec_test`), `start`, `stop`, `restart`, `status` (via `pg_ctl`). Port 5432, superuser `revrec`, `trust` auth (localhost dev only). |
-| `docker-compose.yml` | **Inactive here** (Docker needs WSL2, not installed; Win 11 Home has no Hyper-V). Kept for machines where Docker works: service `db` = `postgres:16-alpine`, container `revrec_db`, creds `revrec`, port 5432, volume `revrec_pgdata`, healthcheck. |
-| `scripts/init-test-db.sql` | Only used by the Docker path — `CREATE DATABASE revrec_test`. `pg.ps1 install` does the same for the local path. |
+| `docker-compose.yml` | **Active datastore.** service `db` = `pgvector/pgvector:pg17` (stock PG 17 + the `vector` extension the RAG layer needs), container `revrec_db`, creds `revrec`/`revrec`, port 5432, volume `revrec_pgdata`, healthcheck, runs `scripts/init-db.sql` on first start. `docker compose up -d`. |
+| `scripts/init-db.sql` | First-container-start init: `CREATE DATABASE` for `revrec_test` + the three parallel-build test DBs, and `CREATE EXTENSION vector` in every DB. |
+| `scripts/init-test-db.sql` | Legacy (single test DB) — superseded by `init-db.sql`. |
 | `.gitignore` | Ignores `__pycache__`, `.venv`, `.pytest_cache`, `.env`, `node_modules`, `frontend/dist`, `**/data/synthetic_events.csv`. |
 | `.claude/skills/` | Claude Code project skills (dev tooling, not shipped): `build-workflow` (mandatory per-task workflow wrapper: check out/update plan.md → verify against Razorpay sources (link list + how-to embedded in its Step 1) → keep architecture.md diagrams current → documentation.md → history.md brief; absorbed the former `razorpay-source-check` skill), `scroll-craft` + `liquid-glass` (vendored UI skills), `glass-scroll-3d` (composite scroll+R3F+glass, for the welcome page), `frontend` (one skill, four modes — `scroll-craft` + `liquid-glass` vendored UI guides, `glass-scroll-3d` composite scroll+R3F+glass for the welcome page, `revrec-dashboard` dashboard UI: tokens + chart catalog + data-table/timeline components, combines dataviz + liquid-glass; each mode is a `GUIDE.md` under `.claude/skills/frontend/<mode>/`). |
 | `plan.md` | The project brief (formerly `CLAUDE.md`; renamed). `CLAUDE.md` is now a short operational guide pointing here. |
@@ -109,7 +117,7 @@ RAZORPAY BUILDATHON/
 
 | File | Purpose |
 |---|---|
-| `pyproject.toml` | Project `razorpay-revenue-recovery-backend`, `requires-python >=3.11`. Deps: `anthropic`, `sqlmodel`, `psycopg[binary]`, `razorpay`, `fastapi`, `uvicorn[standard]`, `pydantic-settings`, `pandas`, `python-dotenv`, `faker`, `httpx` (LLM REST + TestClient). Dev: `pytest`. `[tool.uv] package = false`. `[tool.pytest.ini_options] pythonpath = ["."]` so `import app.*` works from `backend/`. |
+| `pyproject.toml` | Project `razorpay-revenue-recovery-backend`, `requires-python >=3.11`. Deps: `anthropic`, `sqlmodel`, `psycopg[binary]`, `razorpay`, `fastapi`, `uvicorn[standard]`, `pydantic-settings`, `pandas`, `python-dotenv`, `faker`, `httpx`, **`pgvector`** (SQLAlchemy `Vector` type), **`fastembed`** (local embeddings, ONNX — no torch), **`numpy`**, **`langchain-core`** (`Embeddings` interface). Dev: `pytest`. `[tool.uv] package = false`. `pythonpath = ["."]`. |
 | `uv.lock` | Resolved dependency lockfile (committed). |
 | `.env.example` | Template for `backend/.env`. Keys below. |
 
@@ -124,6 +132,8 @@ RAZORPAY BUILDATHON/
 | `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-sonnet-5` | Diagnosis fallback + Recovery outreach (optional) |
 | `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | — / `anthropic/claude-3.7-sonnet` | same, via OpenRouter (OpenAI-compatible) |
 | `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` | same, via OpenAI |
+| `OPENAI_EMBED_MODEL` | `text-embedding-3-small` | RAG embeddings when `OPENAI_API_KEY` set (else local `fastembed`) |
+| `RAG_ENABLED` / `RAG_TOP_K` / `RAG_BUCKET_CAP` / `RAG_DEDUP_DISTANCE` | `true` / `5` / `200` / `0.05` | RAG retrieval + knowledge-base curation knobs |
 | `RAZORPAY_KEY_ID` / `_KEY_SECRET` / `_WEBHOOK_SECRET` | — | webhook listener (later) |
 
 ### 3.3 `backend/app/` — application code
@@ -133,7 +143,8 @@ RAZORPAY BUILDATHON/
 | `app/__init__.py` … `app/webhooks/__init__.py` | Package markers. `agents/`, `api/`, `webhooks/` are empty placeholders. | scaffold |
 | `app/main.py` | FastAPI application. See §5. | minimal (health only) |
 | `app/config.py` | `Settings` (pydantic-settings) + cached `get_settings()`. See §4. | done |
-| `app/llm.py` | Provider-agnostic LLM client for Diagnosis + Recovery. `chat(system, user, *, settings, max_tokens)`, `available(settings)`, `resolve_provider(settings)`, `model_label(settings)`, `LLMUnavailable`. Auto-detects `anthropic → openrouter → openai` (or `LLM_PROVIDER`); OpenRouter/OpenAI via OpenAI-compatible REST over `httpx`, Anthropic via its SDK. | **done** |
+| `app/llm.py` | Provider-agnostic LLM client for Diagnosis + Recovery. Chat: `chat()`, `available()`, `resolve_provider()`, `model_label()`, `LLMUnavailable` — auto-detects `anthropic → openrouter → openai` (or `LLM_PROVIDER`). Embeddings (for RAG): `embed(texts, *, settings) -> list[list[float]]`, `embeddings_available()`, `resolve_embed_provider()`, `embed_label()` — OpenAI `text-embedding-3-small` (`dimensions=384`) if `OPENAI_API_KEY`, else local `fastembed` `all-MiniLM-L6-v2` (384-d). `EMBED_DIM = 384`. | **done** |
+| `app/rag.py` | RAG knowledge base for the Diagnosis Agent. `case_text(event)`, `RevRecEmbeddings` (LangChain `Embeddings` wrapper over `llm.embed`), `retrieve_similar(session, event, *, settings, k)`, `format_for_prompt(similar)`, `seed_reference_cases(session, *, settings)` (~20 canonical examples, first run only), `index_resolved_cases(session, *, settings)` (append confidently-classified batch events; dedup + bucket-cap). No-op when pgvector or embeddings are unavailable. | **done** |
 | `app/db/store.py` | The shared event store: table models, Pydantic schema models, engine/session helpers, CRUD + audit functions. See §6–§9. | **done, step 1** |
 | `app/data/generate.py` | Deterministic synthetic batch generator incl. fraud cluster. See §10. | **done, step 2** |
 | `app/agents/AGENTS_CONTRACT.md` | Frozen cross-agent contract: per-stage I/O, `RootCause`→intervention map, audit `action` registry, stopping-rule constants, fraud-cluster signature, audit `payload` shapes, Claude-usage rules, API response contract, file boundaries, §10 Phase-B0 Q&A resolutions. | **done** |
@@ -143,7 +154,7 @@ RAZORPAY BUILDATHON/
 | `app/agents/recovery.py` | Recovery Agent. `run()`, `draft_outreach(intervention, event, *, settings)`, `_stable_hash(event_id)`; constants `MAX_RETRY_ATTEMPTS=3`, `MAX_ESCALATION_STAGE=3`, `COOLDOWN_HOURS=24`, `HUMAN_APPROVAL_THRESHOLD_INR=Decimal("5000")`, `SUCCESS_RATES`, `HOURS_TO_RECOVERY`, `INTERVENTIONS`. Reads `diagnosed` only. Deterministic recovered/exception; human-approval gate logs + does not execute; escalation never past stage 3. Details: `AGENTS_CONTRACT.md` §4/§7/§10. | **done, step 5** |
 | `app/agents/audit.py` | Audit Agent. `compute_metrics(session) -> dict` (the MetricsBlock — pure read, what the API returns) + `run(session, *, settings=None) -> list[str]` (writes one `batch_metrics` row on the earliest event). Full-batch metrics + complete honest exception list. Details: `AGENTS_CONTRACT.md` §7/§8. | **done, step 6** |
 | `app/pipeline.py` | `run(database_url=None, *, settings=None) -> dict` chains Detection→Diagnosis→Recovery→Audit over the seeded batch and returns the MetricsBlock; argparse CLI (`--reset`, `--count`, `--seed`, `--json`) with a printed summary. | **done, step 7** |
-| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
+| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/events/{id}/similar`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
 
 ### 3.4 `backend/tests/`
 
@@ -164,11 +175,11 @@ RAZORPAY BUILDATHON/
 | `src/App.tsx` | Shell: header + a line that calls `api.health()` and shows the backend status. Placeholder for the dashboard pages. |
 | `src/api/client.ts` | `request<T>()` fetch wrapper (JSON, throws on non-2xx). `api.health()`. Base URL from `VITE_API_BASE_URL` (blank in dev → proxy). |
 | `src/api/fixtures.json` | Sample of every API response shape (`events`, `eventAudit`, `pipelineRun`, `metrics`) per `AGENTS_CONTRACT.md` §8. **Regenerated from a real seed-42 pipeline run** (74 events, 40 exceptions). Default data source until `VITE_DATA_SOURCE=live`. |
-| `src/api/types.ts` | TypeScript types for the contract (`EventRead`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, response wrappers). |
+| `src/api/types.ts` | TypeScript types for the contract (`EventRead`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, `SimilarCase`, `EventSimilarResponse`, response wrappers). |
 | `src/api/dataSource.ts` | The adapter every page calls: `listEvents` / `getAuditTrail` / `getMetrics` / `runPipeline`. Reads `fixtures.json` by default; `VITE_DATA_SOURCE=live` routes to `client.ts` → `/api`. One env var, no component changes. |
 | `src/api/actionLabels.ts` | Plain-business-English labels for agent / status / root cause / intervention / audit action / event type. |
 | `src/api/client.ts` | fetch wrapper; now also `listEvents`, `getAuditTrail`, `getMetrics`, `runPipeline`. |
-| `src/components/*` | `AppShell` (nav + theme toggle), `Card` / `GlassCard` (frosted `backdrop-blur`), `StatTile`, `StatusPill`, `DataTable`, `ChartCard` + `HBar` (Recharts bar only), `AuditTimeline` + `PayloadViewer`, `DetailDrawer`, `Feedback` (`Skeleton` / `EmptyState` / `ErrorState`). |
+| `src/components/*` | `AppShell` (nav + theme toggle), `Card` / `GlassCard` (frosted `backdrop-blur`), `StatTile`, `StatusPill`, `DataTable`, `ChartCard` + `HBar` (Recharts bar only), `AuditTimeline` + `PayloadViewer`, `DetailDrawer`, `SimilarCases` (RAG "similar past cases" panel in the drawer), `Feedback` (`Skeleton` / `EmptyState` / `ErrorState`). |
 | `src/pages/*` | `Overview` (KPI tiles + 2 charts), `Queue` (at-risk table + deep-linkable `?case=` decision-trail drawer), `Recovery` (analytics), `Exceptions` (fraud-cluster alert card + honest exception table + CSV export). |
 | `src/lib/*`, `src/charts/series.ts`, `src/hooks/useAsync.ts` | `format.ts` (Indian ₹ grouping), `csv.ts`, chart series colours, async loading hook. |
 | `tsconfig.app.json` | + `resolveJsonModule` (fixtures import). `package.json` + `react-router-dom`. |
@@ -181,7 +192,7 @@ RAZORPAY BUILDATHON/
 
 | Symbol | Kind | Notes |
 |---|---|---|
-| `Settings` | `pydantic_settings.BaseSettings` | `model_config`: `env_file=".env"`, `extra="ignore"`. Fields: `database_url`, `test_database_url`, `frontend_origin`; **LLM (all optional):** `llm_provider: str \| None`, `anthropic_api_key`, `anthropic_model`, `openrouter_api_key`, `openrouter_model` (`anthropic/claude-3.7-sonnet`), `openrouter_base_url`, `openai_api_key`, `openai_model` (`gpt-4o-mini`), `openai_base_url`; `razorpay_key_id/secret/webhook_secret: str \| None`. Each read from the same-named env var (case-insensitive). |
+| `Settings` | `pydantic_settings.BaseSettings` | `env_file=".env"`, `extra="ignore"`. Fields: `database_url`, `test_database_url`, `frontend_origin`; **LLM (all optional):** `llm_provider`, `anthropic_api_key`/`anthropic_model`, `openrouter_api_key`/`openrouter_model`/`openrouter_base_url`, `openai_api_key`/`openai_model`/`openai_embed_model`/`openai_base_url`; **RAG:** `rag_enabled` (`True`), `rag_top_k` (`5`), `rag_bucket_cap` (`200`), `rag_dedup_distance` (`0.05`); `razorpay_key_id/secret/webhook_secret`. Each from the same-named env var. |
 | `get_settings()` | function, `@lru_cache` | Returns the process-wide `Settings` singleton. |
 
 ---
@@ -204,6 +215,7 @@ RAZORPAY BUILDATHON/
 | GET | `/docs`, `/redoc`, `/openapi.json` | FastAPI built-in | Swagger / ReDoc | done |
 | GET | `/api/events` | `routes.list_events` | `{events: EventRead[], count: int}` | **done** |
 | GET | `/api/events/{event_id}/audit` | `routes.event_audit` | `{event: EventRead, trail: AuditRead[]}` — 404 if unknown | **done** |
+| GET | `/api/events/{event_id}/similar` | `routes.event_similar` | `{event_id, similar: SimilarCase[]}` — RAG nearest cases; `[]` when KB/embeddings off; 404 if unknown | **done** |
 | POST | `/api/pipeline/run` | `routes.pipeline_run` | `{metrics: MetricsBlock, ran_at: str}` — query params `reset`, `count`, `seed` | **done** |
 | GET | `/api/metrics` | `routes.get_metrics` | `MetricsBlock` (computed from current DB state) | **done** |
 
@@ -273,6 +285,24 @@ All are `enum.StrEnum` (members compare/serialize as plain strings).
 | `payload` | `dict \| None` | `None` | `JSONB` — round-trips as a dict |
 | `timestamp` | `datetime` (tz-aware) | `_utcnow()` | `TIMESTAMPTZ` |
 
+### `ResolvedCase` → table `resolved_cases` (RAG knowledge base)
+
+Created **only** when the target Postgres has the `vector` extension
+(`store.VECTOR_ENABLED`); otherwise skipped and `app/rag.py` is a no-op.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `int` | **PK** |
+| `event_id` | `str` | indexed; source event (or `ref_NN` for seeded reference cases) |
+| `event_type` | `str` | indexed; retrieval is filtered by this |
+| `raw_failure_reason` | `str \| None` | |
+| `case_text` | `str` | the exact text that was embedded |
+| `root_cause` | `str` | indexed; the label |
+| `confidence` | `float` | diagnosis confidence when captured (1.0 for reference) |
+| `source` | `str` | `pipeline` \| `reference` |
+| `created_at` | `datetime` (tz-aware) | `TIMESTAMPTZ` |
+| `embedding` | `vector(384)` | pgvector; **HNSW index** `ix_resolved_cases_embedding_hnsw` (`vector_cosine_ops`, m=16, ef_construction=64) |
+
 ---
 
 ## 8. `app/db/store.py` — Pydantic schema models (validation + API shapes)
@@ -307,6 +337,11 @@ Shared config `_STRICT = ConfigDict(extra="forbid", use_enum_values=True, valida
 | `all_events(session)` | | `list[Event]` | ordered by `created_at` |
 | `log_action(session, data=None, /, **kwargs)` | `data: AuditCreate \| None` | `int` (new row id) | the ONLY way to write the audit trail; FK-checked (phantom `event_id` → `IntegrityError`) |
 | `get_audit_trail(session, event_id=None)` | | `list[AuditLog]` | whole batch or one event, ordered by `id` |
+| `add_resolved_case(session, *, event_id, event_type, raw_failure_reason, case_text, root_cause, embedding, confidence=1.0, source="pipeline")` | | `ResolvedCase` | insert one labelled case into the RAG KB; raises if pgvector off |
+| `nearest_resolved_cases(session, embedding, *, k=5, event_type=None)` | | `list[(ResolvedCase, distance)]` | **the only vector search in the codebase** — cosine distance via the HNSW index, ascending; `[]` when pgvector off |
+| `resolved_case_count(session, *, root_cause=None, event_type=None)` | | `int` | KB size, optionally per bucket |
+| `trim_resolved_bucket(session, *, root_cause, event_type, cap)` | | `int` | delete oldest rows in a bucket beyond `cap`; returns count removed |
+| `_enable_vector(engine)` | | `bool` | `CREATE EXTENSION IF NOT EXISTS vector`; sets `VECTOR_ENABLED` (called by `init_db`/`reset_db`) |
 | `main` (`__name__=="__main__"`) | | | `init_db()` + print |
 
 Module constants: `DEFAULT_DATABASE_URL`, `MONEY = Decimal("0.01")`.
@@ -359,11 +394,9 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 
 | Task | Command | From |
 |---|---|---|
-| One-time Postgres setup | `powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 install` | repo root |
-| Start Postgres | `powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 start` | repo root |
-| Stop Postgres | `powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 stop` | repo root |
-| Postgres status | `powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 status` | repo root |
-| _(Docker alternative)_ | `docker compose up -d` (only where Docker/WSL2 works) | repo root |
+| Start Postgres (pgvector) | `docker compose up -d` | repo root |
+| Stop Postgres | `docker compose down` (`-v` wipes the volume → re-seed) | repo root |
+| _(No-Docker fallback — RAG disabled)_ | `powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 install` then `… start` | repo root |
 | Install backend deps | `uv sync` | `backend/` |
 | Create local env | `cp .env.example .env` | `backend/` |
 | Init schema manually | `uv run python -m app.db.store` | `backend/` |
@@ -390,12 +423,14 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 | `test_recovery.py` | 29 | yes | per-intervention routes (7 params), salary-window retry, bank backoff, max-attempts halt, escalation cap (never stage 4), human-approval gate (executed vs not, boundary), cooldown delay, suspected-fraud refusal, never-reads-flagged, template + Claude draft, idempotency |
 | `test_audit.py` | 11 | yes (dedicated `revrec_test_aud`) | totals + money-based overall rate, all-six status keys, by-root-cause enum order, by-intervention `at_risk`/`recovered`, avg hours, complete exception list + all reason-derivation paths, fraud cluster, determinism, one `batch_metrics` row, no event mutation, empty batch |
 | `test_pipeline.py` | 6 | yes | reset→generate→run: every event terminal, fraud cluster `flagged` + not recovered, metrics over full batch, exception list populated with reasons, rerunnable/stable, `batch_metrics` row written |
+| `test_rag.py` | 10 | yes (needs pgvector) | vector extension present, degrade path when embeddings off, reference-case seeding idempotent, retrieve filtered by type + sorted, add/nearest round-trip, dedup-on-insert, skip unknown/low-confidence/fraud, bucket-cap trims oldest, `RevRecEmbeddings` wrapper, Diagnosis feeds RAG context into the LLM prompt |
+| `test_api.py` | 6 | yes (needs pgvector) | one module-scoped real pipeline run; `/health`, `/api/events`, `/api/events/{id}/audit` + 404, `MetricsBlock` shape, `POST /api/pipeline/run`, `/api/events/{id}/similar` + 404 |
 | `test_llm.py` | 5 | no | provider auto-detect priority (anthropic→openrouter→openai), explicit `LLM_PROVIDER` override, `available()` / `model_label()`, `LLMUnavailable` when no key |
 
-Current run against the local Postgres: **118 passed** (`uv run pytest -q` from
-`backend/`; run in chunks on low-RAM boxes — the full suite plus the
-batch-reseeding pipeline tests can OOM a single process). With Postgres
-stopped: ~20 passed, the rest skipped.
+Current run against the pgvector container: **134 passed** (`uv run pytest -q`
+from `backend/`; run in chunks on low-RAM boxes — the batch-reseeding pipeline
+tests can OOM a single process). `test_rag.py` / `test_api.py` need pgvector.
+With Postgres stopped: ~20 passed, the rest skipped.
 
 ---
 
@@ -410,7 +445,8 @@ stopped: ~20 passed, the rest skipped.
 | 5 | `agents/recovery.py` (+ stopping rules) | ✅ done (29 tests) |
 | 6 | `agents/audit.py` (metrics) | ✅ done (11 tests) |
 | 7 | `pipeline.py` (single entrypoint) | ✅ done (`app/pipeline.py` + 6 integration tests) |
-| 8 | dashboard | 🟡 built against fixtures (`frontend/src/pages/*`), + `app/api/*` live; browser end-to-end pass pending |
+| 8 | dashboard | ✅ built + browser-verified on live API; RAG "Similar past cases" panel added |
+| — | multi-provider LLM (`app/llm.py`) + **RAG knowledge base** (`app/rag.py`, pgvector HNSW) wired into Diagnosis | ✅ done (not a numbered step; plan.md §12) |
 | 9 | `webhooks/listener.py` | ⬜ stretch — not built |
 | 10 | `readme.md` (submission README + "what broke") + `architecture.md` | ✅ done |
 
@@ -422,16 +458,18 @@ SQLite; `uv` instead of `pip`/`requirements.txt`; a FastAPI + React monorepo
 
 ## 14. Known issues / notes
 
-- **Postgres is a local process, not a service** — it does not auto-start on
-  login. Run `scripts\pg.ps1 start` at the beginning of a work session
-  (`status` to check). Data lives in `%LOCALAPPDATA%\revrec-pg\data` and
-  persists across restarts.
-- Docker path is unavailable on this machine (Docker Desktop needs WSL2; not
-  installed; Win 11 Home has no Hyper-V). `winget` install of PostgreSQL also
-  failed here (EDB CDN returned 403). Hence the zonky-binaries approach in
-  `scripts/pg.ps1`.
-- `trust` auth: any localhost client can connect as `revrec` with no password.
-  Fine for local dev; never expose port 5432.
+- **Postgres runs as the `pgvector/pgvector:pg17` Docker container** (`docker
+  compose up -d`). Docker Desktop + WSL2 work on this machine — the earlier
+  "Docker unavailable, Win 11 Home has no Hyper-V" note was wrong. Data lives in
+  the `revrec_pgdata` volume; `down -v` wipes it (then re-seed).
+- `scripts/pg.ps1` (zonky embedded PG 17) remains as a no-Docker fallback. It
+  has **no extensions**, so `store.VECTOR_ENABLED` is `False` there and the RAG
+  layer (`app/rag.py`) is a no-op — Diagnosis still works, just without
+  retrieval.
+- Container auth: `revrec`/`revrec` (password). Never expose port 5432.
+- RAG embeddings: with no `OPENAI_API_KEY`, the local `fastembed` model
+  (`all-MiniLM-L6-v2`, ~90 MB) downloads once to `%TEMP%\fastembed_cache` on
+  first use. Tests never trigger it (`_offline_embeddings` autouse fixture).
 - A stale `VIRTUAL_ENV` env var may point at a deleted root `.venv` — harmless,
   `uv` ignores it.
 - Schema changes are not migrated (no Alembic yet); `reset_db` (or

@@ -6,6 +6,54 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — RAG knowledge base (pgvector + HNSW) for the Diagnosis Agent
+
+- **Did:**
+  - **Infra:** discovered Docker Desktop + WSL2 actually work here (the docs
+    saying otherwise were wrong). Switched Postgres from the embedded binary to
+    the `pgvector/pgvector:pg17` container (`docker-compose.yml`,
+    `scripts/init-db.sql` creates the test DBs + `CREATE EXTENSION vector`).
+    `scripts/pg.ps1` kept as a no-Docker fallback (RAG disabled there).
+  - **`app/llm.py`:** added `embed()` — OpenAI `text-embedding-3-small`
+    (`dimensions=384`) if `OPENAI_API_KEY`, else local `fastembed`
+    (`all-MiniLM-L6-v2`, 384-d), else `LLMUnavailable`. Plus
+    `embeddings_available` / `resolve_embed_provider` / `embed_label`.
+  - **`store.py`:** `ResolvedCase` table (`vector(384)` + HNSW cosine index),
+    `add_resolved_case` / `nearest_resolved_cases` / `resolved_case_count` /
+    `trim_resolved_bucket`; `_enable_vector` sets `VECTOR_ENABLED` and the
+    table is skipped when pgvector is absent.
+  - **`app/rag.py`:** `retrieve_similar` (embed → nearest → few-shot block),
+    `seed_reference_cases` (~20 canonical examples, first run), 
+    `index_resolved_cases` (append confidently-classified events; dedup +
+    per-bucket cap), `RevRecEmbeddings` (LangChain `Embeddings` wrapper).
+  - **`diagnosis.py`:** `run()` retrieves similar cases before the LLM
+    fallback and passes them as `rag_context`; payload gains `rag_examples` +
+    `similar_case_ids`.
+  - **`pipeline.py`:** seed KB before Diagnosis, grow it after Audit.
+  - **API:** `GET /api/events/{id}/similar`. **Frontend:** `SimilarCases`
+    panel in the decision-trail drawer; `getSimilar` in the data-source
+    adapter; `SimilarCase` / `EventSimilarResponse` types.
+  - **Tests:** `test_rag.py` (10), `test_api.py` (6); `_offline_embeddings`
+    autouse fixture keeps the real model out of the suite; fixed a
+    `reset_db` table-ordering bug surfaced by the new table. **134 green.**
+  - Deps: `pgvector`, `fastembed`, `numpy`, `langchain-core`.
+  - **Not done:** LangGraph (pipeline stays a linear state machine), FAISS /
+    dedicated vector store (premature at demo scale), `langchain-postgres`
+    PGVector (opaque tables, breaks the store.py-only rule).
+- **Verified:** real end-to-end run with `fastembed` — a novel phrasing
+  ("the customers bank was completely unreachable during the charge") retrieved
+  `bank_downtime` as the top match (0.89). No public source names Razorpay's
+  own vector DB; pgvector is the defensible, right-sized choice and we don't
+  claim otherwise in the pitch.
+- **Docs:** plan.md §12 (RAG deviation + Docker correction); CLAUDE.md
+  (commands + gotchas); architecture.md (pipeline diagram, ERD, topology,
+  decision log, tech stack); documentation.md (§2/§3/§4/§5/§6/§7/§9/§12/§13 +
+  runbook + known issues); AGENTS_CONTRACT.md §5/§8; this entry.
+- **Next:** browser pass of the RAG panel on live API; step 9 webhook listener;
+  pitch video.
+
+---
+
 ## 2026-09-04 — Provider-agnostic LLM (Anthropic / OpenRouter / OpenAI)
 
 - **Did:** New `backend/app/llm.py` — `chat()` / `available()` / `resolve_provider()`

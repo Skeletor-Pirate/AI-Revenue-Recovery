@@ -64,20 +64,24 @@ event sources ─▶ Detection ─▶ Diagnosis ─▶ Recovery ─▶ Audit/Rep
   generator is deterministic per `seed`; `raw_failure_reason` values are **real
   Razorpay error codes**, not invented.
 
-Current build position: steps 1–2 done (`store.py`, `data/generate.py`); step 3
-(`agents/detection.py`) is next. See `documentation.md` §13.
+Current build position: steps 1–8 done (four agents, `pipeline.py`, `app/api/*`,
+React dashboard) + a multi-provider LLM client and a pgvector RAG knowledge base.
+See `documentation.md` §13.
 
 ## Commands
 
-Postgres is a **local process, not a service** — start it at the beginning of
-every session.
+Postgres runs as the `pgvector/pgvector` **Docker container** (Docker Desktop +
+WSL2 work on this machine — earlier docs saying otherwise were wrong). Start it
+at the beginning of every session.
 
-```powershell
-# repo root — one-time, then start/stop/status each session
-powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 install   # once
-powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 start
-powershell -ExecutionPolicy Bypass -File scripts\pg.ps1 status
+```bash
+# repo root
+docker compose up -d          # pgvector/pgvector:pg17 on :5432
+docker compose down           # stop (keeps data);  down -v wipes the volume
 ```
+
+`scripts/pg.ps1` (zonky embedded Postgres 17) is a **fallback** for machines
+without Docker — it has no extensions, so the RAG layer is disabled there.
 
 ```bash
 # backend/ (uv-managed; needs Python 3.11+)
@@ -85,8 +89,9 @@ uv sync                                          # install deps
 cp .env.example .env                             # first time
 uv run python -m app.db.store                    # create schema
 uv run python -m app.data.generate --reset       # seed synthetic batch (+ fraud cluster)
+uv run python -m app.pipeline --reset            # run all four agents -> metrics
 uv run uvicorn app.main:app --reload             # API on :8000/docs
-uv run pytest -q                                 # all tests (skips DB tests if Postgres down)
+uv run pytest -q                                 # all tests (run in chunks on low-RAM boxes)
 uv run pytest tests/test_store.py::test_insert_event_defaults   # one test
 ```
 
@@ -102,10 +107,14 @@ npm run lint                                      # oxlint
 
 - No schema migrations (no Alembic). Apply model changes with `reset_db` — i.e.
   re-run `uv run python -m app.data.generate --reset`.
-- `docker-compose.yml` is kept but **inactive** on this machine (Docker needs
-  WSL2; unavailable on Win 11 Home). `scripts/pg.ps1` (zonky embedded Postgres
-  17 binaries) is the active path.
-- Postgres uses `trust` auth on localhost — no password, never expose port 5432.
+- `docker-compose.yml` (`pgvector/pgvector:pg17`) is the **active** datastore.
+  `scripts/pg.ps1` (embedded binary, no extensions → RAG disabled) is the
+  fallback. `scripts/init-db.sql` creates the test DBs + `CREATE EXTENSION
+  vector` on first container start.
+- Container Postgres uses password auth (`revrec`/`revrec`); never expose 5432.
+- RAG needs an embeddings backend: `OPENAI_API_KEY` (best) or the bundled local
+  `fastembed` model; with neither, retrieval is a no-op and Diagnosis falls
+  back to rules + LLM only.
 - Tests that call `reset_db` must `session.close()` first (a live session's
   locks block `DROP TABLE` on Postgres).
 - Approved deviations from the brief: PostgreSQL (not SQLite), `uv` (not
