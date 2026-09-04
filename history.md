@@ -6,6 +6,17 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — Liquid Glass Display: Apple-Style Refraction for Side Windows (Ticket & Case Drawers)
+
+- **Did:**
+  - **Liquid Glass Display Engine:** Activated `.claude/skills/frontend/liquid-glass/` by creating `frontend/src/lib/liquidGlass.ts` with typed SVG displacement map generation, chromatic aberration (`scale=-112`, `chroma=6`, `border=0.05`), `color-interpolation-filters="sRGB"`, and a clean `useLiquidGlass(ref, options)` React hook.
+  - **Ticket Drawer (`TicketDrawer.tsx`):** Upgraded the side window that opens when clicking a ticket on `/attention` with the complete Liquid Glass recipe: translucent glass gradient (`liquid-glass-drawer`), specular top & edge highlights, left glass rim border, nested `liquid-glass-card` tiles for event summaries and resolution notes, and luminous reviewer action buttons.
+  - **Detail Drawer (`DetailDrawer.tsx`):** Applied identical liquid glass display styling to the decision trail side drawer on the queue and overview pages.
+  - **CSS Styling (`index.css`):** Added reusable `.liquid-glass-drawer`, `.liquid-glass-card`, and `.liquid-glass-pill` tokens with automatic frosted blur fallback for non-Chromium browsers.
+  - **Build & Lint:** `npm run lint` (`oxlint`) passed with 0 warnings and 0 errors; `npm run build` (`tsc -b && vite build`) passed cleanly.
+
+---
+
 ## 2026-09-04 — Duplex Voice Call: Human Barge-in / Interruptibility & Live Microphone
 
 - **Did:**

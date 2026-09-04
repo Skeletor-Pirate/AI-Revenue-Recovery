@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { dataSource } from '../api/dataSource'
 import { useAsync } from '../hooks/useAsync'
+import { useLiquidGlass } from '../lib/liquidGlass'
 import {
   labelEventType,
   labelRootCause,
@@ -18,9 +19,9 @@ import type { EventRead } from '../api/types'
 
 function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex justify-between gap-4 py-1 text-sm">
-      <span className="text-ink-muted">{label}</span>
-      <span className="text-right text-ink-soft">{value}</span>
+    <div className="flex justify-between gap-4 py-1.5 text-xs border-b border-white/[0.04] last:border-0">
+      <span className="text-slate-400 font-medium">{label}</span>
+      <span className="text-right text-slate-200">{value}</span>
     </div>
   )
 }
@@ -34,8 +35,11 @@ const maskTail = (v: string | null | undefined): string | null => {
 function Summary({ event }: { event: EventRead }) {
   const hasContact = event.customer_name || event.customer_phone || event.customer_upi_vpa
   return (
-    <div className="rounded-xl bg-surface-2 p-4">
-      <SummaryRow label="Case" value={<span className="font-mono">{event.event_id}</span>} />
+    <div className="rounded-2xl liquid-glass-card p-4 my-3 text-slate-200">
+      <div className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-2 flex items-center justify-between pb-1 border-b border-white/[0.06]">
+        <span>Case Overview</span>
+        <span className="font-mono text-indigo-400">{event.event_id}</span>
+      </div>
       <SummaryRow label="Customer" value={<span className="font-mono">{event.customer_id}</span>} />
       {hasContact && (
         <>
@@ -52,7 +56,7 @@ function Summary({ event }: { event: EventRead }) {
           {event.customer_upi_vpa && (
             <SummaryRow label="UPI VPA" value={<span className="font-mono">{event.customer_upi_vpa}</span>} />
           )}
-          <p className="text-[10px] text-ink-muted -mt-0.5 mb-1">synthetic test data, not a real record</p>
+          <p className="text-[10px] text-slate-500 -mt-0.5 mb-1">synthetic test data, not a real record</p>
         </>
       )}
       <SummaryRow label="Type" value={labelEventType(event.event_type)} />
@@ -71,7 +75,7 @@ function Summary({ event }: { event: EventRead }) {
         <SummaryRow
           label="Promise-to-Pay (PTP)"
           value={
-            <span className="capitalize font-medium text-indigo-400">
+            <span className="capitalize font-semibold text-amber-400">
               {event.ptp_status} {event.promised_date ? `(${formatDateTime(event.promised_date)})` : ''}
             </span>
           }
@@ -81,7 +85,7 @@ function Summary({ event }: { event: EventRead }) {
       <SummaryRow label="Days overdue" value={event.days_overdue} />
       <SummaryRow
         label="Failure reason (raw)"
-        value={<span className="font-mono">{event.raw_failure_reason ?? '—'}</span>}
+        value={<span className="font-mono text-xs">{event.raw_failure_reason ?? '—'}</span>}
       />
       <SummaryRow label="Last updated" value={formatDateTime(event.updated_at)} />
     </div>
@@ -98,6 +102,9 @@ export function DetailDrawer({
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [ptpOpen, setPtpOpen] = useState(false)
   const [simulateOpen, setSimulateOpen] = useState(false)
+  const drawerRef = useRef<HTMLDivElement>(null)
+
+  useLiquidGlass(drawerRef, { scale: -112, chroma: 6, border: 0.05, blur: 4 })
 
   useEffect(() => {
     if (!caseId) return
@@ -119,23 +126,38 @@ export function DetailDrawer({
         <button
           type="button"
           aria-label="Close"
-          className="absolute inset-0 bg-black/30"
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 cursor-pointer"
           onClick={onClose}
         />
         <div
+          ref={drawerRef}
           role="dialog"
           aria-modal="true"
           aria-label={`Decision trail for ${caseId}`}
-          className="relative z-10 flex h-full w-full max-w-md flex-col overflow-y-auto bg-surface-1 p-5 ring-1 ring-[var(--color-ring)]"
+          className="relative z-10 flex h-full w-full max-w-lg flex-col overflow-y-auto liquid-glass-drawer p-6 text-slate-100 shadow-2xl animate-in slide-in-from-right duration-300"
         >
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink">Decision trail</h2>
+          <div className="mb-4 flex items-center justify-between pb-3 border-b border-white/[0.08]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-sm shadow-inner">
+                ⚡
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-white">Decision Trail</h2>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                    LIQUID GLASS
+                  </span>
+                </div>
+                <p className="text-xs font-mono text-slate-400 mt-0.5">{caseId}</p>
+              </div>
+            </div>
             <button
               type="button"
               onClick={onClose}
-              className="text-sm text-ink-muted hover:text-ink"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer text-sm"
+              title="Close drawer"
             >
-              Close
+              ✕
             </button>
           </div>
 
@@ -149,21 +171,21 @@ export function DetailDrawer({
                   <button
                     type="button"
                     onClick={() => setVoiceOpen(true)}
-                    className="px-2.5 py-1 text-xs font-medium rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 transition-colors"
+                    className="px-2.5 py-1.5 text-xs font-medium rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-sm"
                   >
                     🎙️ Voice Script
                   </button>
                   <button
                     type="button"
                     onClick={() => setPtpOpen(true)}
-                    className="px-2.5 py-1 text-xs font-medium rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 transition-colors"
+                    className="px-2.5 py-1.5 text-xs font-medium rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-sm"
                   >
                     🤝 Record PTP
                   </button>
                   <button
                     type="button"
                     onClick={() => setSimulateOpen(true)}
-                    className="px-2.5 py-1 text-xs font-medium rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/30 transition-colors"
+                    className="px-2.5 py-1.5 text-xs font-bold rounded-xl bg-gradient-to-r from-purple-600/30 to-indigo-600/30 hover:from-purple-600/50 hover:to-indigo-600/50 text-purple-200 border border-purple-500/40 transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-md"
                   >
                     🧪 Simulate
                   </button>
@@ -173,15 +195,20 @@ export function DetailDrawer({
               <Summary event={state.data.event} />
 
               {/* Mandate Retry Sequencer Plan */}
-              <div className="mt-5">
+              <div className="mt-4 rounded-2xl liquid-glass-card p-4">
                 <SequencerTimeline eventId={caseId} />
               </div>
 
-              <h3 className="mt-5 mb-1 text-sm font-semibold text-ink">
+              <h3 className="mt-5 mb-2 text-sm font-semibold text-slate-200">
                 Every agent decision
               </h3>
-              <AuditTimeline trail={state.data.trail} />
-              <SimilarCases caseId={caseId} />
+              <div className="rounded-2xl liquid-glass-card p-4">
+                <AuditTimeline trail={state.data.trail} />
+              </div>
+
+              <div className="mt-4 rounded-2xl liquid-glass-card p-4">
+                <SimilarCases caseId={caseId} />
+              </div>
             </>
           )}
         </div>
