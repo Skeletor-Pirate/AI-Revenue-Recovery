@@ -112,24 +112,34 @@ const fixtureAgentReply = (
   message: string,
   turnIndex: number,
 ): { reply: string; outcome: PlaygroundOutcome; reasoning: string } => {
-  const text = message.toLowerCase()
-  if (/fraud|scam|nahi kiya|galat|block/.test(text)) {
+  const text = message.toLowerCase().trim()
+  if (/fraud|scam|nahi kiya|galat|block|hacked/.test(text)) {
     return {
       reply: `Samajh gaya ${name} ji, main isse turant ek human reviewer ko bhej raha hoon.`,
       outcome: 'escalated',
       reasoning: 'Customer disputes the transaction; needs human verification.',
     }
   }
-  if (/angry|gussa|complaint|manager|escalate|\bno\b|nahi/.test(text)) {
+  if (/angry|gussa|complaint|manager|escalate|bad service/.test(text)) {
     return {
       reply: 'Bilkul, main ise human team ko forward kar deta hoon jo aapki behtar madad kar payenge.',
       outcome: 'escalated',
       reasoning: "Customer asked for a person / pushed back beyond the agent's bounded authority.",
     }
   }
-  if (/haan|yes|theek|\bok\b|okay|sure|pay|done|kar|thik/.test(text)) {
+  const hasQuestion = /kyu|why|kaise|reason|kya hua|fail|problem|issue|batao|bataiye|detail|explain/.test(text) || text.includes('?')
+  if (hasQuestion) {
     return {
-      reply: `Shukriya ${name} ji! Maine confirm kar diya hai, aapka case resolve ho gaya.`,
+      reply: 'Payment process hone ke dauraan bank network issue ya session timeout ho gaya tha. Kya main aapko ek fresh payment link bhej doon taaki aap ise easily complete kar sakein?',
+      outcome: 'ongoing',
+      reasoning: 'Explained failure reason in response to customer question.',
+    }
+  }
+  const hasAgreement = /pay kar|link bhej|bhej do|bhejo|kar deta hoon|karta hoon|kar dunga|ready to pay|sure send|yes send|send link|paid/.test(text) ||
+    (!hasQuestion && /^(haan|yes|theek hai|ok|okay|sure|done)$/.test(text))
+  if (hasAgreement) {
+    return {
+      reply: `Shukriya ${name} ji! Maine secure Razorpay payment link send kar diya hai: https://rzp.io/i/rec_pay. Pay karte hi aapka receipt generate ho jayega.`,
       outcome: 'resolved',
       reasoning: 'Customer agreed to pay / confirmed resolution.',
     }
@@ -341,13 +351,17 @@ export const dataSource = {
 
   // --- Simulate / Playground (sandboxed rehearsal) ---
 
-  async startPlayground(eventId: string, mode: PlaygroundMode): Promise<PlaygroundStartResponse> {
-    if (IS_LIVE) return api.startPlayground(eventId, mode)
+  async startPlayground(
+    eventId: string,
+    mode: PlaygroundMode,
+    channel?: PlaygroundChannel,
+  ): Promise<PlaygroundStartResponse> {
+    if (IS_LIVE) return api.startPlayground(eventId, mode, channel)
     const event = fixtureEvent(eventId)
     const opening: PlaygroundTurn = { speaker: 'agent', text: fixtureOpening(event) }
     return settle({
       mode,
-      channel: fixtureChannel(event),
+      channel: channel ?? fixtureChannel(event),
       ticket_ref: `SIM-${eventId.slice(-4).toUpperCase()}${Math.floor(Math.random() * 900 + 100)}`,
       persona: fixturePersona(event),
       opening_turn: opening,

@@ -205,39 +205,75 @@ def _to_provider_turns(
 # No LLM key configured -> the feature must still run to a real conclusion,
 # same "never raises, always degrades" contract as every other agent here.
 
-_AGREE_WORDS = {"haan", "yes", "theek", "ok", "okay", "sure", "pay", "done", "kar", "thik"}
-_FRAUD_WORDS = {"fraud", "scam", "nahi kiya", "wrong", "block", "galat"}
-_UPSET_WORDS = {"angry", "gussa", "complaint", "manager", "escalate", "no", "nahi"}
+_ROOT_CAUSE_EXPLANATIONS: dict[str, str] = {
+    RootCause.INSUFFICIENT_FUNDS: "Aapke bank account mein transaction ke waqt insufficient balance tha, is wajah se bank ne request decline kar di thi.",
+    RootCause.EXPIRED_INSTRUMENT: "Aapka registered card ya autopay mandate expire ho chuka hai, isliye automatic charge fail ho gaya.",
+    RootCause.BANK_DOWNTIME: "Aapke bank ke server mein temporary technical downtime tha, is wajah se gateway timeout ho gaya.",
+    RootCause.AUTH_FAILURE: "OTP verification ya 3D Secure bank authentication timeout ho gaya tha.",
+    RootCause.CARD_DECLINED: "Aapke card issuing bank ne security limits ya online payment permissions ki wajah se transaction decline kiya tha.",
+    RootCause.CHECKOUT_ABANDONED: "Aap checkout page par the par payment capture hone se pehle browser session close/drop ho gaya tha.",
+    RootCause.INVOICE_FORGOTTEN: "Aapki B2B invoice due date cross ho chuki hai aur system mein unpaid mark hui hai.",
+    RootCause.SUSPECTED_FRAUD: "Kuch unusual activity patterns detect hone par payment risk check par hold ho gayi thi.",
+    RootCause.UNKNOWN: "Payment gateway par ek temporary error aaya tha aur transaction verify nahi ho paya.",
+}
+
+_FRAUD_WORDS = {"fraud", "scam", "nahi kiya", "wrong", "block", "galat", "hacked", "police"}
+_UPSET_WORDS = {"angry", "gussa", "complaint", "manager", "escalate", "bad service", "consumer court"}
+_QUESTION_WORDS = {"kyu", "why", "kaise", "reason", "kya hua", "fail", "problem", "issue", "batao", "bataiye", "detail", "explain", "samjhao"}
+_AGREE_PHRASES = {"pay kar", "link bhej", "bhej do", "bhejo", "kar deta hoon", "karta hoon", "kar dunga", "ready to pay", "sure send", "yes send", "send link", "paid", "payment kar"}
 
 
 def _fallback_agent_reply(persona: dict[str, Any], message: str, turn_index: int) -> dict[str, Any]:
-    text = message.lower()
+    text = message.lower().strip()
+
+    # 1. Fraud or security dispute -> escalate immediately to human review
     if any(w in text for w in _FRAUD_WORDS):
         return {
-            "reply": f"Samajh gaya {persona['name']} ji, main isse turant ek human reviewer ko bhej raha hoon.",
+            "reply": f"Samajh gaya {persona['name']} ji. Main is transaction ko turant hold par daalkar human fraud verification team ko escalate kar raha hoon.",
             "outcome": "escalated",
-            "reasoning": "Customer disputes the transaction; needs human verification.",
+            "reasoning": "Customer disputes transaction / suspects fraud; halted for human review.",
         }
+
+    # 2. Hostile / Manager demand -> escalate
     if any(w in text for w in _UPSET_WORDS):
         return {
-            "reply": "Bilkul, main ise human team ko forward kar deta hoon jo aapki behtar madad kar payenge.",
+            "reply": "Bilkul {persona['name']} ji, main is case ko senior review team ko forward kar raha hoon jo aapse directly connect karenge.",
             "outcome": "escalated",
-            "reasoning": "Customer asked for a person / pushed back beyond the agent's bounded authority.",
+            "reasoning": "Customer requested human supervisor / expressed dissatisfaction.",
         }
-    if any(w in text for w in _AGREE_WORDS):
+
+    # 3. Questions asking why it failed / inquiry ("kyu hua", "fail kyu hua", "why")
+    has_question = any(w in text for w in _QUESTION_WORDS) or "?" in text
+    if has_question:
+        rc = persona.get("root_cause") or RootCause.UNKNOWN
+        explanation = _ROOT_CAUSE_EXPLANATIONS.get(rc, "Gateway par temporary network error aaya tha.")
         return {
-            "reply": f"Shukriya {persona['name']} ji! Maine confirm kar diya hai, aapka case resolve ho gaya.",
-            "outcome": "resolved",
-            "reasoning": "Customer agreed to pay / confirmed resolution.",
+            "reply": f"{explanation} Kya main aapko ek secure Razorpay payment link bhej doon taaki aap ise easily settle kar sakein?",
+            "outcome": "ongoing",
+            "reasoning": f"Explained failure root cause ({rc}) in response to customer inquiry.",
         }
+
+    # 4. Genuine agreement to pay / proceed
+    has_agreement = any(p in text for p in _AGREE_PHRASES) or (
+        text in {"haan", "yes", "theek hai", "ok", "okay", "sure", "done"} and not has_question
+    )
+    if has_agreement:
+        return {
+            "reply": f"Shukriya {persona['name']} ji! Maine Rs {persona['amount']} ka secure Razorpay payment link send kar diya hai: https://rzp.io/i/rec_{persona.get('amount', 0)}. Payment complete hote hi receipt mil jayegi.",
+            "outcome": "resolved",
+            "reasoning": "Customer agreed to pay / requested payment link.",
+        }
+
+    # 5. Stalled without resolution after multiple turns
     if turn_index >= 3:
         return {
-            "reply": "Koi baat nahi, main is case ko human review ke liye bhej deta hoon taaki hum aapki sahi madad kar sakein.",
+            "reply": f"Koi baat nahi {persona['name']} ji, main is case ko human review queue mein daal deta hoon taaki hamari accounts team aapse call par connect kar sake.",
             "outcome": "escalated",
-            "reasoning": "No clear resolution after a few exchanges; handing off rather than looping.",
+            "reasoning": "No resolution reached after multi-turn exchange; handing off to human queue.",
         }
+
     return {
-        "reply": f"Samajh sakta hoon {persona['name']} ji. Kya main aapko turant ek payment link bhej doon?",
+        "reply": f"Samajh sakta hoon {persona['name']} ji. Aapka Rs {persona['amount']} ka payment pending hai. Kya aap abhi UPI ya card se retry karna chahenge?",
         "outcome": "ongoing",
         "reasoning": "",
     }
@@ -245,18 +281,19 @@ def _fallback_agent_reply(persona: dict[str, Any], message: str, turn_index: int
 
 def _fallback_customer_reply(persona: dict[str, Any], turn_index: int) -> str:
     lines = [
-        "Haan bataiye, kya baat hai?",
-        "Achha theek hai, thoda samajh nahi aaya, aap detail mein bata sakte hain?",
-        "Theek hai, mujhe lagta hai main abhi pay kar sakta hoon.",
+        "Haan bataiye, transaction fail kyu hua tha?",
+        "Achha theek hai, ab samajh aaya. Kya aap link bhej sakte hain?",
+        "Haan theek hai, main abhi payment link se pay kar deta hoon.",
     ]
     return lines[min(turn_index, len(lines) - 1)]
 
 
 def _fallback_opening(persona: dict[str, Any], channel: Channel) -> str:
     greeting = "Namaste" if not persona["is_business"] else "Namaste, Razorpay Recovery se bol raha hoon"
+    medium_desc = "call" if channel == "call" else "WhatsApp notification"
     return (
-        f"{greeting} {persona['name']} ji! Aapka Rs {persona['amount']} ka "
-        f"{persona['event_type'].replace('_', ' ')} pending hai. Kya hum iske baare mein baat kar sakte hain?"
+        f"{greeting} {persona['name']} ji! Yeh aapke Rs {persona['amount']} ke "
+        f"{persona['event_type'].replace('_', ' ')} ke regarding {medium_desc} hai. Kya hum iske baare mein 2 minute baat kar sakte hain?"
     )
 
 
@@ -290,19 +327,23 @@ def _ticket_ref(event: Event) -> str:
 # --- public API --------------------------------------------------------
 
 def start_session(
-    event: Event, *, mode: Mode, settings: Settings | None = None
+    event: Event,
+    *,
+    mode: Mode,
+    channel: Channel | None = None,
+    settings: Settings | None = None,
 ) -> dict[str, Any]:
     """Open a rehearsal session. Never writes to the store."""
     s = settings or get_settings()
-    channel = pick_channel(event)
+    active_channel = channel if channel in ("call", "message") else pick_channel(event)
     persona = build_persona(event)
 
-    opening_text = _fallback_opening(persona, channel)
+    opening_text = _fallback_opening(persona, active_channel)
     if llm.available(s):
         try:
             opening_text = llm.chat(
-                _agent_system_prompt(event, persona, channel),
-                _opening_instruction(persona, channel),
+                _agent_system_prompt(event, persona, active_channel),
+                _opening_instruction(persona, active_channel),
                 settings=s,
                 max_tokens=200,
             ).strip() or opening_text
@@ -312,13 +353,13 @@ def start_session(
     opening_turn = {"speaker": "agent", "text": opening_text}
     return {
         "mode": mode,
-        "channel": channel,
+        "channel": active_channel,
         "ticket_ref": _ticket_ref(event),
         "persona": persona,
         # audio only on the turn shown to the caller right now; `history`
         # (resent on every later call) stays plain text -- no point paying to
         # regenerate/re-transmit audio for lines already spoken.
-        "opening_turn": _with_audio(opening_turn, channel, s),
+        "opening_turn": _with_audio(opening_turn, active_channel, s),
         "outcome": "ongoing",
         "history": [opening_turn],
     }

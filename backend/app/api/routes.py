@@ -70,6 +70,10 @@ class PlaygroundStartRequest(BaseModel):
         default="interactive",
         description="'interactive' (you play the customer/business) or 'auto' (watch two AIs talk)",
     )
+    channel: str | None = Field(
+        default=None,
+        description="Optional channel: 'call' (live phone call) or 'message' (WhatsApp chat). Auto-picked if omitted.",
+    )
 
 
 class PlaygroundMessageRequest(BaseModel):
@@ -159,7 +163,9 @@ def playground_start(event_id: str, body: PlaygroundStartRequest) -> dict[str, A
         event = store.get_event(session, event_id)
         if event is None:
             raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
-        return playground.start_session(event, mode=mode, settings=get_settings())
+        return playground.start_session(
+            event, mode=mode, channel=body.channel, settings=get_settings()
+        )
 
 
 @router.post("/events/{event_id}/playground/message")

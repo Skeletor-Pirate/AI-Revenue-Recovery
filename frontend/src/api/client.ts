@@ -12,6 +12,7 @@ import type {
   TicketMutationResponse,
   TicketsResponse,
   PlaygroundAdvanceResponse,
+  PlaygroundChannel,
   PlaygroundMessageResponse,
   PlaygroundMode,
   PlaygroundStartResponse,
@@ -85,10 +86,10 @@ export const api = {
     ),
 
   // --- Simulate / Playground (sandboxed rehearsal) ---
-  startPlayground: (eventId: string, mode: PlaygroundMode) =>
+  startPlayground: (eventId: string, mode: PlaygroundMode, channel?: PlaygroundChannel) =>
     request<PlaygroundStartResponse>(
       `/api/events/${encodeURIComponent(eventId)}/playground/start`,
-      { method: 'POST', body: JSON.stringify({ mode }) },
+      { method: 'POST', body: JSON.stringify({ mode, channel }) },
     ),
   sendPlaygroundMessage: (
     eventId: string,
