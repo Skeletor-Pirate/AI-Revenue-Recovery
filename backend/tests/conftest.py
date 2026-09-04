@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 
+from app import llm
 from app.db import store
 
 load_dotenv()
@@ -52,6 +53,21 @@ def _require_postgres():
 @pytest.fixture()
 def test_database_url() -> str:
     return TEST_DATABASE_URL
+
+
+@pytest.fixture(autouse=True)
+def _offline_embeddings(monkeypatch):
+    """Never hit a real embedding model in tests.
+
+    `app.llm.embed` is patched to raise, so the RAG layer (`app.rag`) exercises
+    its honest degrade path (retrieval returns `[]`, indexing is a no-op) by
+    default. RAG tests override this with a deterministic fake embedder.
+    """
+
+    def _no_embeddings(*_a, **_k):
+        raise llm.LLMUnavailable("embeddings disabled in tests")
+
+    monkeypatch.setattr("app.llm.embed", _no_embeddings)
 
 
 @pytest.fixture()

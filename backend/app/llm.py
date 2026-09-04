@@ -20,9 +20,16 @@ configured; callers catch that and fall back.
 
 from __future__ import annotations
 
+import importlib.util
 from typing import Any
 
 import httpx
+
+# --- embeddings (for the RAG knowledge base, app/rag.py) -----------------
+EMBED_DIM = 384
+_OPENAI_EMBED_MODEL = "text-embedding-3-small"        # supports `dimensions`
+_LOCAL_EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # 384-d, via fastembed
+_local_embedder: Any = None
 
 
 class LLMUnavailable(RuntimeError):
@@ -156,3 +163,70 @@ def model_label(settings: Any) -> str:
     if provider == "openai":
         return f"openai/{_get(settings, 'openai_model', 'gpt-4o-mini')}"
     return "none"
+
+
+# --- embeddings ---------------------------------------------------------
+
+def resolve_embed_provider(settings: Any) -> str | None:
+    """Which embeddings backend to use, or ``None`` if none is available.
+
+    OpenRouter has **no** embeddings endpoint, so an OpenRouter-only setup
+    falls through to the local model. Order: OpenAI key -> local fastembed.
+    """
+    if _get(settings, "openai_api_key"):
+        return "openai"
+    if importlib.util.find_spec("fastembed") is not None:
+        return "local"
+    return None
+
+
+def embeddings_available(settings: Any) -> bool:
+    return resolve_embed_provider(settings) is not None
+
+
+def embed_label(settings: Any) -> str:
+    provider = resolve_embed_provider(settings)
+    if provider == "openai":
+        return f"openai/{_OPENAI_EMBED_MODEL}"
+    if provider == "local":
+        return f"fastembed/{_LOCAL_EMBED_MODEL}"
+    return "none"
+
+
+def _local_embed(texts: list[str]) -> list[list[float]]:
+    global _local_embedder
+    if _local_embedder is None:
+        import os
+
+        os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+        from fastembed import TextEmbedding  # lazy; downloads the model once
+
+        _local_embedder = TextEmbedding(model_name=_LOCAL_EMBED_MODEL)
+    return [list(map(float, v)) for v in _local_embedder.embed(list(texts))]
+
+
+def embed(texts: list[str], *, settings: Any) -> list[list[float]]:
+    """Embed `texts` into `EMBED_DIM`-dimensional vectors. Raises
+    ``LLMUnavailable`` when no embeddings backend is configured."""
+    provider = resolve_embed_provider(settings)
+    if provider is None:
+        raise LLMUnavailable("no embeddings backend (need OPENAI_API_KEY or fastembed)")
+
+    if provider == "openai":
+        api_key = _get(settings, "openai_api_key")
+        base_url = _get(settings, "openai_base_url", "https://api.openai.com/v1")
+        resp = httpx.post(
+            f"{base_url.rstrip('/')}/embeddings",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": _get(settings, "openai_embed_model", _OPENAI_EMBED_MODEL),
+                "input": list(texts),
+                "dimensions": EMBED_DIM,
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = sorted(resp.json()["data"], key=lambda d: d["index"])
+        return [d["embedding"] for d in data]
+
+    return _local_embed(texts)

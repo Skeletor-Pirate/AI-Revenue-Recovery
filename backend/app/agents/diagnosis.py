@@ -34,7 +34,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from app import llm
+from app import llm, rag
 from app.config import get_settings
 from app.db import store
 from app.db.store import MONEY, Agent, EventStatus, RootCause
@@ -231,14 +231,16 @@ def _coerce_root_cause(value: Any) -> RootCause:
 
 
 def claude_classify(
-    event: Any, settings: Any = None
+    event: Any, settings: Any = None, rag_context: str = ""
 ) -> tuple[RootCause, float, str, bool]:
     """Classify a low-confidence free-text failure via the configured LLM.
 
     Provider-agnostic (see ``app.llm``): Anthropic, OpenRouter or OpenAI.
-    Returns ``(root_cause, confidence, reasoning, used_fallback)``. Never raises.
-    No provider or any exception → ``(UNKNOWN, 0.3, <reason>, True)``. Any
-    non-enum / ``suspected_fraud`` answer is coerced to ``unknown``.
+    ``rag_context`` (optional) is a few-shot block of similar past cases
+    retrieved from the knowledge base (``app.rag``) — included in the prompt
+    when present. Returns ``(root_cause, confidence, reasoning, used_fallback)``.
+    Never raises. No provider or any exception → ``(UNKNOWN, 0.3, <reason>,
+    True)``. Any non-enum / ``suspected_fraud`` answer is coerced to ``unknown``.
     """
     try:
         if settings is None:
@@ -260,6 +262,8 @@ def claude_classify(
             f"attempts_so_far: {event.attempts_so_far}\n"
             f"days_overdue: {getattr(event, 'days_overdue', 0)}"
         )
+        if rag_context:
+            user = f"{rag_context}\n\nNow classify this case:\n{user}"
         text = llm.chat(_SYSTEM_PROMPT, user, settings=settings, max_tokens=300)
         data = json.loads(_extract_json(text))
         rc = _coerce_root_cause(data.get("root_cause"))
@@ -347,8 +351,13 @@ def run(session: store.Session, *, settings: Any = None) -> list[str]:
         used_fallback = False
 
         has_free_text = bool((event.raw_failure_reason or "").strip())
+        similar: list[dict[str, Any]] = []
         if conf <= _LOW_CONFIDENCE and has_free_text:
-            rc, conf, reasoning, used_fallback = claude_classify(event, settings)
+            similar = rag.retrieve_similar(session, event, settings=settings)
+            rag_context = rag.format_for_prompt(similar) if similar else ""
+            rc, conf, reasoning, used_fallback = claude_classify(
+                event, settings, rag_context
+            )
             used_llm = True
 
         conf = max(0.0, min(1.0, float(conf)))
@@ -377,6 +386,8 @@ def run(session: store.Session, *, settings: Any = None) -> list[str]:
                     "confidence": conf,
                     "model": llm.model_label(settings),
                     "used_fallback": used_fallback,
+                    "rag_examples": len(similar),
+                    "similar_case_ids": [c["event_id"] for c in similar],
                 },
             )
         else:

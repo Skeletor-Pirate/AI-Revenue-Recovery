@@ -28,9 +28,17 @@ from typing import Any, Iterable
 
 from dotenv import load_dotenv
 from pydantic import ConfigDict, field_validator
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Session, SQLModel, create_engine, select
+
+try:  # pgvector is optional — RAG is disabled on a Postgres without it
+    from pgvector.sqlalchemy import Vector
+
+    _HAVE_PGVECTOR_PKG = True
+except Exception:  # pragma: no cover
+    Vector = None  # type: ignore
+    _HAVE_PGVECTOR_PKG = False
 
 load_dotenv()  # read .env into os.environ if present
 
@@ -40,6 +48,12 @@ DEFAULT_DATABASE_URL = os.environ.get(
 )
 
 MONEY = Decimal("0.01")  # quantum for rounding rupee amounts to paise
+EMBED_DIM = 384  # embedding dimensionality for the RAG knowledge base (app/rag.py)
+
+# Set by init_db()/reset_db() once we know whether the target Postgres has the
+# `vector` extension. When False the `resolved_cases` table is skipped and the
+# RAG layer degrades to a no-op.
+VECTOR_ENABLED = False
 
 
 # --- controlled vocabulary -------------------------------------------------
@@ -146,6 +160,43 @@ class AuditLog(SQLModel, table=True):
     )
 
 
+# --- RAG knowledge base (pgvector) --------------------------------------
+# One row per past classified case. The Diagnosis Agent embeds an incoming
+# free-text failure and retrieves the nearest rows here as few-shot examples
+# (app/rag.py). Only created when the target Postgres has the `vector`
+# extension; otherwise skipped and RAG is a no-op.
+
+if _HAVE_PGVECTOR_PKG:
+
+    class ResolvedCase(SQLModel, table=True):
+        __tablename__ = "resolved_cases"
+        __table_args__ = (
+            Index(
+                "ix_resolved_cases_embedding_hnsw",
+                "embedding",
+                postgresql_using="hnsw",
+                postgresql_ops={"embedding": "vector_cosine_ops"},
+                postgresql_with={"m": 16, "ef_construction": 64},
+            ),
+        )
+
+        id: int | None = Field(default=None, primary_key=True)
+        event_id: str = Field(index=True)
+        event_type: str = Field(index=True)
+        raw_failure_reason: str | None = None
+        case_text: str                      # the exact text that was embedded
+        root_cause: str = Field(index=True)
+        confidence: float = 1.0
+        source: str = Field(default="pipeline")   # "pipeline" | "reference"
+        created_at: datetime = Field(
+            default_factory=_utcnow,
+            sa_column=Column(DateTime(timezone=True), nullable=False),
+        )
+        embedding: Any = Field(sa_column=Column(Vector(EMBED_DIM)))
+else:  # pragma: no cover - only on a Postgres without pgvector
+    ResolvedCase = None  # type: ignore
+
+
 # --- schema models (Pydantic validation) ---------------------------------
 # extra="forbid"     -> an unexpected key (typo) raises instead of being ignored
 # use_enum_values    -> members are stored/dumped as their plain string value
@@ -250,6 +301,20 @@ class AuditRead(SQLModel):
     timestamp: datetime
 
 
+class ResolvedCaseRead(SQLModel):
+    """Response shape for the RAG 'similar past cases' surfaces (no embedding)."""
+
+    id: int
+    event_id: str
+    event_type: str
+    raw_failure_reason: str | None
+    case_text: str
+    root_cause: str
+    confidence: float
+    source: str
+    created_at: datetime
+
+
 # --- engine + schema ----------------------------------------------------
 
 _engine = None
@@ -271,16 +336,52 @@ def get_session(database_url: str | None = None) -> Session:
     return Session(get_engine(database_url))
 
 
+def _enable_vector(engine) -> bool:
+    """Try to enable the pgvector extension. Returns True if `vector` is usable.
+
+    Sets the module-level ``VECTOR_ENABLED`` flag the RAG layer checks.
+    """
+    global VECTOR_ENABLED
+    VECTOR_ENABLED = False
+    if not _HAVE_PGVECTOR_PKG:
+        return False
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        VECTOR_ENABLED = True
+    except Exception:
+        VECTOR_ENABLED = False
+    return VECTOR_ENABLED
+
+
+def _managed_tables() -> list[Any] | None:
+    """Tables to create/drop. ``None`` (= all) when pgvector is on; an explicit
+    list excluding `resolved_cases` when it's off."""
+    if VECTOR_ENABLED:
+        return None
+    return [
+        t for t in SQLModel.metadata.sorted_tables if t.name != "resolved_cases"
+    ]
+
+
 def init_db(database_url: str | None = None) -> None:
-    """CREATE TABLE for every SQLModel table that doesn't exist yet."""
-    SQLModel.metadata.create_all(get_engine(database_url))
+    """CREATE TABLE for every SQLModel table that doesn't exist yet.
+
+    Also enables pgvector when available; the `resolved_cases` table is created
+    only then (RAG is a no-op otherwise).
+    """
+    engine = get_engine(database_url)
+    _enable_vector(engine)
+    SQLModel.metadata.create_all(engine, tables=_managed_tables())
 
 
 def reset_db(database_url: str | None = None) -> None:
     """Drop every table and recreate -- fresh batch per demo run / per test."""
     engine = get_engine(database_url)
-    SQLModel.metadata.drop_all(engine)
-    SQLModel.metadata.create_all(engine)
+    _enable_vector(engine)
+    tables = _managed_tables()
+    SQLModel.metadata.drop_all(engine, tables=tables)
+    SQLModel.metadata.create_all(engine, tables=tables)
 
 
 # --- events -----------------------------------------------------------------
@@ -390,6 +491,102 @@ def get_audit_trail(
     if event_id is not None:
         statement = statement.where(AuditLog.event_id == event_id)
     return list(session.exec(statement))
+
+
+# --- RAG knowledge base (resolved_cases) ------------------------------------
+# All vector search lives behind these three functions -- the only place the
+# project does nearest-neighbour lookups. Swapping pgvector for a dedicated
+# store later is a change here and nowhere else.
+
+def add_resolved_case(
+    session: Session,
+    *,
+    event_id: str,
+    event_type: str,
+    raw_failure_reason: str | None,
+    case_text: str,
+    root_cause: str,
+    embedding: list[float],
+    confidence: float = 1.0,
+    source: str = "pipeline",
+) -> Any:
+    """Insert one labelled case into the RAG knowledge base."""
+    if not VECTOR_ENABLED:
+        raise RuntimeError("pgvector not enabled; resolved_cases unavailable")
+    row = ResolvedCase(
+        event_id=event_id,
+        event_type=event_type,
+        raw_failure_reason=raw_failure_reason,
+        case_text=case_text,
+        root_cause=root_cause,
+        embedding=embedding,
+        confidence=confidence,
+        source=source,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def nearest_resolved_cases(
+    session: Session,
+    embedding: list[float],
+    *,
+    k: int = 5,
+    event_type: str | None = None,
+) -> list[tuple[Any, float]]:
+    """The `k` nearest knowledge-base rows to `embedding` (cosine distance).
+
+    Returns ``[(ResolvedCase, distance), ...]`` ascending by distance
+    (0 = identical). Uses the HNSW index. Empty list when pgvector is off.
+    """
+    if not VECTOR_ENABLED:
+        return []
+    dist = ResolvedCase.embedding.cosine_distance(embedding).label("distance")
+    stmt = select(ResolvedCase, dist)
+    if event_type is not None:
+        stmt = stmt.where(ResolvedCase.event_type == event_type)
+    stmt = stmt.order_by(dist).limit(k)
+    return [(row, float(d)) for row, d in session.exec(stmt).all()]
+
+
+def resolved_case_count(
+    session: Session,
+    *,
+    root_cause: str | None = None,
+    event_type: str | None = None,
+) -> int:
+    if not VECTOR_ENABLED:
+        return 0
+    stmt = select(ResolvedCase)
+    if root_cause is not None:
+        stmt = stmt.where(ResolvedCase.root_cause == root_cause)
+    if event_type is not None:
+        stmt = stmt.where(ResolvedCase.event_type == event_type)
+    return len(session.exec(stmt).all())
+
+
+def trim_resolved_bucket(
+    session: Session, *, root_cause: str, event_type: str, cap: int
+) -> int:
+    """Delete the oldest rows in a (root_cause, event_type) bucket beyond `cap`.
+    Returns how many were removed. Keeps the knowledge base bounded."""
+    if not VECTOR_ENABLED:
+        return 0
+    rows = session.exec(
+        select(ResolvedCase)
+        .where(ResolvedCase.root_cause == root_cause)
+        .where(ResolvedCase.event_type == event_type)
+        .order_by(ResolvedCase.created_at.desc())
+    ).all()
+    removed = 0
+    for row in rows[cap:]:
+        session.delete(row)
+        removed += 1
+    if removed:
+        session.commit()
+    return removed
 
 
 if __name__ == "__main__":

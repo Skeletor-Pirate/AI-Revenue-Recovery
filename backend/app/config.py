@@ -36,7 +36,15 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    openai_embed_model: str = "text-embedding-3-small"
     openai_base_url: str = "https://api.openai.com/v1"
+
+    # RAG knowledge base (app/rag.py). rag_enabled=False turns retrieval off
+    # even when pgvector + embeddings are available.
+    rag_enabled: bool = True
+    rag_top_k: int = 5
+    rag_bucket_cap: int = 200          # max cases per (root_cause, event_type)
+    rag_dedup_distance: float = 0.05   # skip inserts within this cosine distance
 
     razorpay_key_id: str | None = None
     razorpay_key_secret: str | None = None

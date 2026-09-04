@@ -20,6 +20,7 @@ import argparse
 import json
 from typing import Any
 
+from app import rag
 from app.agents import audit, detection, diagnosis, recovery
 from app.config import get_settings
 from app.data import generate
@@ -43,9 +44,11 @@ def run(
 
     with store.get_session(database_url) as session:
         detection.run(session, settings=settings)
+        rag.seed_reference_cases(session, settings=settings)  # first run only
         diagnosis.run(session, settings=settings)
         recovery.run(session, settings=settings)
         audit.run(session, settings=settings)
+        rag.index_resolved_cases(session, settings=settings)  # grow the KB
         return audit.compute_metrics(session)
 
 

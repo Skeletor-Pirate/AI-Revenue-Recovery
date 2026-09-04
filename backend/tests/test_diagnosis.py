@@ -191,7 +191,7 @@ def test_low_confidence_triggers_claude_fallback(session, monkeypatch):
 
     calls = []
 
-    def fake_claude(event, settings=None):
+    def fake_claude(event, settings=None, rag_context=""):
         calls.append(event.event_id)
         return (RootCause.BANK_DOWNTIME, 0.72, "looks like a gateway blip", False)
 
@@ -243,7 +243,7 @@ def test_claude_fallback_coerced_to_unknown_when_used_in_run(session, monkeypatc
     monkeypatch.setattr(
         diagnosis,
         "claude_classify",
-        lambda e, s=None: (RootCause.UNKNOWN, 0.3, "no api key", True),
+        lambda e, s=None, rag_context="": (RootCause.UNKNOWN, 0.3, "no api key", True),
     )
     diagnosis.run(session)
     ev = store.get_event(session, "evt_ft")

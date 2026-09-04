@@ -17,6 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from app import rag
 from app.agents import audit
 from app.config import get_settings
 from app.data import generate
@@ -48,6 +49,18 @@ def event_audit(event_id: str) -> dict[str, Any]:
             "event": EventRead.model_validate(event, from_attributes=True),
             "trail": [AuditRead.model_validate(r, from_attributes=True) for r in trail],
         }
+
+
+@router.get("/events/{event_id}/similar")
+def event_similar(event_id: str) -> dict[str, Any]:
+    """RAG: the nearest already-classified cases to this event (may be empty
+    when the knowledge base / embeddings are unavailable)."""
+    with store.get_session() as session:
+        event = store.get_event(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        similar = rag.retrieve_similar(session, event, settings=get_settings())
+        return {"event_id": event_id, "similar": similar}
 
 
 @router.get("/metrics")

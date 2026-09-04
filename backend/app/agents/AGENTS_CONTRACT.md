@@ -113,11 +113,26 @@ deterministic per-event rule (see §7), not randomness, so the demo is stable.
   and OpenAI use the OpenAI-compatible REST endpoint over `httpx`; Anthropic
   uses its native SDK. OpenRouter's default model is a Claude model.
 - Diagnosis: call **only** when rules confidence ≤ 0.5 and `raw_failure_reason`
-  is non-null free-text. System prompt: classify into the `RootCause` enum;
-  return JSON `{"root_cause": <member>, "confidence": <0..1>, "reasoning": <str>}`.
-  On no provider / any exception → fall back to `root_cause="unknown"`,
-  confidence `0.3`, reasoning notes the fallback. Never raises. The
-  `llm_classified_root_cause` payload `model` key = `llm.model_label(settings)`.
+  is non-null free-text. **RAG (`app/rag.py`) runs first:** embed the case,
+  retrieve the nearest already-classified cases from `resolved_cases`
+  (pgvector), and prepend them to the prompt as few-shot examples. System
+  prompt: classify into the `RootCause` enum; return JSON
+  `{"root_cause": <member>, "confidence": <0..1>, "reasoning": <str>}`. On no
+  provider / any exception → fall back to `root_cause="unknown"`, confidence
+  `0.3`, reasoning notes the fallback. Never raises. The
+  `llm_classified_root_cause` payload adds `model` = `llm.model_label(settings)`,
+  `rag_examples` = count of retrieved cases, `similar_case_ids` = their ids.
+- RAG degrades to a no-op when pgvector is absent (embedded-Postgres fallback)
+  or no embeddings backend is configured — Diagnosis then behaves exactly as
+  before. Embeddings: `llm.embed()` — OpenAI `text-embedding-3-small`
+  (`dimensions=384`) if `OPENAI_API_KEY`, else local `fastembed`
+  (`all-MiniLM-L6-v2`, 384-d). OpenRouter has no embeddings endpoint.
+- The knowledge base is **curated + bounded**: near-duplicate inserts skipped
+  (`rag_dedup_distance`), each `(root_cause, event_type)` bucket capped
+  (`rag_bucket_cap`). `pipeline.run` seeds ~20 reference cases on the first run
+  and appends confidently-classified batch events after each run. All vector
+  search is behind `store.nearest_resolved_cases` — the only ANN lookup in the
+  codebase.
 - Recovery: the LLM drafts outreach copy only. Plain business English, mirror
   Razorpay's Agent Studio tone (e.g. "Hi, I noticed you left … would you like a
   payment link?"). No ML jargon. Template fallback per intervention when no
@@ -197,6 +212,10 @@ holds one realistic sample of each. Shapes:
 
 - `GET /api/events` → `{events: EventRead[], count: int}`
 - `GET /api/events/{id}/audit` → `{event: EventRead, trail: AuditRead[]}`
+- `GET /api/events/{id}/similar` → `{event_id: str, similar: SimilarCase[]}` —
+  `SimilarCase = {event_id, event_type, raw_failure_reason, case_text,
+  root_cause, source, similarity}` (RAG; `similar` is `[]` when the knowledge
+  base / embeddings are unavailable)
 - `POST /api/pipeline/run` → `{metrics: MetricsBlock, ran_at: str}`
 - `GET /api/metrics` → `MetricsBlock` (last run, computed from current DB state)
 

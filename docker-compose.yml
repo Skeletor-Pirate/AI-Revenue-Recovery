@@ -1,17 +1,19 @@
-# Postgres for the AI Revenue Recovery pipeline.
+# PostgreSQL + pgvector for the AI Revenue Recovery pipeline.
 #
-# NOT the active path on the current dev machine: Docker Desktop needs WSL2,
-# which isn't installed, and Windows 11 Home has no Hyper-V fallback. We run a
-# self-contained local PostgreSQL via `scripts/pg.ps1` instead (see
-# documentation.md section 11). This file is kept for anyone on a box where
-# Docker works.
+# This is the ACTIVE datastore path (Docker Desktop works on this machine).
+# The image is `pgvector/pgvector` — stock Postgres 17 with the `vector`
+# extension available, which the RAG layer (app/rag.py) needs and stock
+# Postgres / the old embedded binary could not provide.
 #
 #   Start:  docker compose up -d
 #   Stop:   docker compose down          (keeps data)
-#   Wipe:   docker compose down -v       (deletes the volume)
+#   Wipe:   docker compose down -v       (deletes the volume, forces re-seed)
+#
+# scripts/pg.ps1 (zonky embedded Postgres) is kept as a no-extension fallback
+# for machines without Docker; RAG is disabled there.
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg17
     container_name: revrec_db
     environment:
       POSTGRES_USER: revrec
@@ -21,7 +23,7 @@ services:
       - "5432:5432"          # host:container -- reach it at localhost:5432
     volumes:
       - revrec_pgdata:/var/lib/postgresql/data
-      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/01-init-test-db.sql:ro
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U revrec -d revrec"]
       interval: 3s
