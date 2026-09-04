@@ -100,8 +100,12 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [history])
 
-  const playTurnVoice = (turn: TurnWithAudio, index: number) => {
-    if (isMuted) return
+  const playTurnVoice = (turn: TurnWithAudio, index: number, onEnd?: () => void) => {
+    if (isMuted) {
+      setSpeakingIndex(null)
+      onEnd?.()
+      return
+    }
 
     // 1. Neural Sarvam AI Audio
     if (turn.audio_base64) {
@@ -111,9 +115,13 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
       const el = new Audio(`data:audio/wav;base64,${turn.audio_base64}`)
       audioRef.current = el
       setSpeakingIndex(index)
-      el.onended = () => setSpeakingIndex(null)
-      el.onerror = () => setSpeakingIndex(null)
-      el.play().catch(() => setSpeakingIndex(null))
+      const finish = () => {
+        setSpeakingIndex(null)
+        onEnd?.()
+      }
+      el.onended = finish
+      el.onerror = finish
+      el.play().catch(finish)
       return
     }
 
@@ -122,12 +130,26 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
       window.speechSynthesis.cancel()
       const utterance = new SpeechSynthesisUtterance(turn.text)
       utterance.rate = 1.0
-      utterance.pitch = turn.speaker === 'agent' ? 1.05 : 0.95
+      // Customer voice is lower pitch (0.85); Agent voice is higher pitch (1.05)
+      utterance.pitch = turn.speaker === 'agent' ? 1.05 : 0.85
       setSpeakingIndex(index)
-      utterance.onend = () => setSpeakingIndex(null)
-      utterance.onerror = () => setSpeakingIndex(null)
+      const finish = () => {
+        setSpeakingIndex(null)
+        onEnd?.()
+      }
+      utterance.onend = finish
+      utterance.onerror = finish
       window.speechSynthesis.speak(utterance)
+      return
     }
+
+    onEnd?.()
+  }
+
+  const playTurnVoiceAsync = (turn: TurnWithAudio, index: number): Promise<void> => {
+    return new Promise((resolve) => {
+      playTurnVoice(turn, index, resolve)
+    })
   }
 
   const begin = async () => {
@@ -181,8 +203,19 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
     try {
       const res = await dataSource.advancePlayground(eventId, history, channel)
       setHistory(res.history)
-      playTurnVoice(res.agent_turn as TurnWithAudio, res.history.length - 1)
-      applyOutcome(res.outcome, res.reasoning)
+
+      const customerIdx = res.history.length - 2
+      const agentIdx = res.history.length - 1
+
+      // Step 1: Customer speaks out loud first
+      playTurnVoice(res.customer_turn as TurnWithAudio, customerIdx, () => {
+        // Step 2: Once customer finishes speaking, Agent speaks
+        setTimeout(() => {
+          playTurnVoice(res.agent_turn as TurnWithAudio, agentIdx, () => {
+            applyOutcome(res.outcome, res.reasoning)
+          })
+        }, 400)
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The conversation could not advance')
     } finally {
@@ -192,20 +225,31 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
 
   const playToResolution = async () => {
     let current = history
-    for (let i = 0; i < 6; i++) {
-      setBusy(true)
-      try {
+    setBusy(true)
+    setError(null)
+    try {
+      for (let i = 0; i < 6; i++) {
         const res = await dataSource.advancePlayground(eventId, current, channel)
         current = res.history
         setHistory(res.history)
+
+        const customerIdx = res.history.length - 2
+        const agentIdx = res.history.length - 1
+
+        // Play Customer voice, wait for it to finish
+        await playTurnVoiceAsync(res.customer_turn as TurnWithAudio, customerIdx)
+        await new Promise((r) => setTimeout(r, 400))
+
+        // Play Agent voice, wait for it to finish
+        await playTurnVoiceAsync(res.agent_turn as TurnWithAudio, agentIdx)
         applyOutcome(res.outcome, res.reasoning)
+
         if (res.outcome !== 'ongoing') break
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'The conversation could not advance')
-        break
-      } finally {
-        setBusy(false)
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The conversation could not advance')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -452,36 +496,69 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                           <div className="absolute inset-0 bg-indigo-500/10 animate-pulse pointer-events-none" />
                         )}
 
-                        <div className="relative mb-3">
-                          <div className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 transition-all ${
-                            speakingIndex !== null
-                              ? 'border-indigo-400 shadow-xl shadow-indigo-500/40 scale-105 bg-indigo-950/80'
-                              : 'border-slate-700 bg-slate-800'
-                          }`}>
-                            👤
-                          </div>
-                          {speakingIndex !== null && (
-                            <span className="absolute -bottom-1 -right-1 p-1 rounded-full bg-indigo-500 text-white text-[10px] animate-bounce">
-                              🔊
-                            </span>
-                          )}
-                        </div>
+                        {(() => {
+                          const activeSpeaker = speakingIndex !== null && history[speakingIndex] ? history[speakingIndex].speaker : null
+                          return (
+                            <>
+                              <div className="relative mb-3">
+                                <div className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl border-2 transition-all duration-300 ${
+                                  speakingIndex !== null
+                                    ? activeSpeaker === 'customer'
+                                      ? 'border-amber-400 shadow-xl shadow-amber-500/40 scale-105 bg-amber-950/80'
+                                      : 'border-indigo-400 shadow-xl shadow-indigo-500/40 scale-105 bg-indigo-950/80'
+                                    : 'border-slate-700 bg-slate-800'
+                                }`}>
+                                  {activeSpeaker === 'customer' ? '👤' : '🎧'}
+                                </div>
+                                {speakingIndex !== null && (
+                                  <span className={`absolute -bottom-1 -right-1 p-1 rounded-full text-white text-[10px] animate-bounce ${
+                                    activeSpeaker === 'customer' ? 'bg-amber-500' : 'bg-indigo-500'
+                                  }`}>
+                                    🔊
+                                  </span>
+                                )}
+                              </div>
 
-                        <h3 className="text-base font-semibold text-white">{persona.name}</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">{persona.phone_masked || '+91 ••••••••••'}</p>
+                              <h3 className="text-base font-semibold text-white">
+                                {activeSpeaker === 'agent' ? 'Razorpay Recovery Agent' : persona.name}
+                              </h3>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                {activeSpeaker === 'agent'
+                                  ? 'AI Voice Assistant (Priya)'
+                                  : `${persona.phone_masked || '+91 ••••••••••'} · Customer`}
+                              </p>
 
-                        <div className="mt-3 flex items-center gap-2">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 ${
-                            phase === 'ended'
-                              ? 'bg-slate-800 text-slate-400'
-                              : speakingIndex !== null
-                              ? 'bg-indigo-950 border border-indigo-700/60 text-indigo-300'
-                              : 'bg-emerald-950 border border-emerald-700/60 text-emerald-300'
-                          }`}>
-                            <span className={`w-2 h-2 rounded-full ${phase === 'ended' ? 'bg-slate-500' : 'bg-emerald-400 animate-pulse'}`} />
-                            {phase === 'ended' ? 'Call Ended' : speakingIndex !== null ? 'Agent Speaking...' : `Connected (${formatTimer(callDuration)})`}
-                          </span>
-                        </div>
+                              <div className="mt-3 flex items-center gap-2">
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                                  phase === 'ended'
+                                    ? 'bg-slate-800 text-slate-400'
+                                    : activeSpeaker === 'customer'
+                                    ? 'bg-amber-950 border border-amber-700/60 text-amber-300 shadow-sm shadow-amber-950/50'
+                                    : activeSpeaker === 'agent'
+                                    ? 'bg-indigo-950 border border-indigo-700/60 text-indigo-300 shadow-sm shadow-indigo-950/50'
+                                    : 'bg-emerald-950 border border-emerald-700/60 text-emerald-300'
+                                }`}>
+                                  <span className={`w-2 h-2 rounded-full ${
+                                    phase === 'ended'
+                                      ? 'bg-slate-500'
+                                      : activeSpeaker === 'customer'
+                                      ? 'bg-amber-400 animate-pulse'
+                                      : activeSpeaker === 'agent'
+                                      ? 'bg-indigo-400 animate-pulse'
+                                      : 'bg-emerald-400 animate-pulse'
+                                  }`} />
+                                  {phase === 'ended'
+                                    ? 'Call Ended'
+                                    : activeSpeaker === 'customer'
+                                    ? `${persona.name} (Customer) Speaking...`
+                                    : activeSpeaker === 'agent'
+                                    ? 'Resolver (Agent) Speaking...'
+                                    : `Connected (${formatTimer(callDuration)})`}
+                                </span>
+                              </div>
+                            </>
+                          )
+                        })()}
 
                         {/* Audio Wave Visualizer Bars */}
                         {phase === 'live' && (
@@ -505,17 +582,25 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                       </div>
 
                       {/* Current Spoken Dialogue */}
-                      {history.length > 0 && (
-                        <div className="p-4 rounded-xl bg-slate-900 border border-indigo-900/40 text-slate-200 text-sm shadow-md">
-                          <div className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                            <span>{history[history.length - 1].speaker === 'agent' ? 'Resolver (Spoken on Call)' : 'You (Customer)'}</span>
-                            {speakingIndex === history.length - 1 && (
-                              <span className="text-emerald-400 text-xs animate-pulse">● Playing Audio</span>
-                            )}
+                      {history.length > 0 && (() => {
+                        const currentTurn = speakingIndex !== null && history[speakingIndex] ? history[speakingIndex] : history[history.length - 1]
+                        const isAgent = currentTurn.speaker === 'agent'
+                        return (
+                          <div className={`p-4 rounded-xl bg-slate-900 border text-slate-200 text-sm shadow-md transition-all ${
+                            isAgent ? 'border-indigo-900/40' : 'border-amber-900/40'
+                          }`}>
+                            <div className="text-[11px] font-semibold uppercase tracking-wider mb-1 flex items-center justify-between">
+                              <span className={isAgent ? 'text-indigo-400' : 'text-amber-400'}>
+                                {isAgent ? 'Resolver (Agent Spoken on Call)' : `${persona.name} (Customer Spoken)`}
+                              </span>
+                              {speakingIndex !== null && (
+                                <span className="text-emerald-400 text-xs animate-pulse">● Playing Audio</span>
+                              )}
+                            </div>
+                            <p className="leading-relaxed">{currentTurn.text}</p>
                           </div>
-                          <p className="leading-relaxed">{history[history.length - 1].text}</p>
-                        </div>
-                      )}
+                        )
+                      })()}
 
                       {/* Quick Voice Responses (Chips) */}
                       {phase === 'live' && (mode === 'interactive' || takenOver) && (
