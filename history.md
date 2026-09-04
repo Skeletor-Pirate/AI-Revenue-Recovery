@@ -6,6 +6,24 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — GitHub Actions CI
+
+- **Did:** `.github/workflows/ci.yml`. **backend** job — `pgvector/pgvector:pg17`
+  service container (health-checked), `astral-sh/setup-uv` + `uv sync --frozen`,
+  a step that `CREATE DATABASE revrec_test`, then two pytest steps
+  (`--ignore=tests/test_pipeline.py`, then the pipeline suite alone — matches
+  the low-RAM two-chunk pattern and surfaces fast failures first).
+  **frontend** job — `npm ci` → `npm run lint` → `npm run build`. Triggers:
+  push to `main`, all PRs, manual; `concurrency` cancels superseded runs. No
+  secrets — every LLM/embedding call is mocked in the suite. CI badge added to
+  the README. Removed a stale `TEST_DATABASE_URL=…revrec_test_aud` line from a
+  test_audit.py docstring.
+- **Docs:** readme.md (badge + CI note), documentation.md (file ref + Last
+  updated), this entry.
+- **Next:** confirm the first CI run is green after push; pitch video.
+
+---
+
 ## 2026-09-04 — Razorpay test-mode webhook listener (build-order step 9)
 
 - **Did:** `app/webhooks/listener.py` + `POST /webhooks/razorpay` (mounted in

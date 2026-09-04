@@ -1,8 +1,6 @@
 """Tests for the Audit / Reporting Agent (app/agents/audit.py).
 
-Run from backend/ with the dedicated test DB:
-  TEST_DATABASE_URL=postgresql+psycopg://revrec:revrec@localhost:5432/revrec_test_aud \
-    uv run pytest -q tests/test_audit.py
+Run from backend/:  uv run pytest -q tests/test_audit.py
 
 The `session` fixture (tests/conftest.py) resets the DB per test and is skipped
 automatically when Postgres is unreachable. The `batch` fixture below builds a

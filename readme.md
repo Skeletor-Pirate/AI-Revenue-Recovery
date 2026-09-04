@@ -1,5 +1,7 @@
 # AI Revenue Recovery — Razorpay AI Buildathon, Track 03
 
+[![CI](https://github.com/Space-Fighter/AI-Revenue-Recovery/actions/workflows/ci.yml/badge.svg)](https://github.com/Space-Fighter/AI-Revenue-Recovery/actions/workflows/ci.yml)
+
 **Find revenue that's slipping away and win it back.** A four-agent pipeline that
 detects revenue at risk, diagnoses the root cause, runs a **bounded** recovery
 workflow, and writes every decision to an audit trail — with **measured money
@@ -40,6 +42,11 @@ uv run pytest -q --ignore=tests/test_pipeline.py
 uv run pytest -q tests/test_pipeline.py
 # → 146 passed.  Frontend:  cd frontend && npm run build && npm run lint
 ```
+
+CI runs exactly this on every push and PR — a `pgvector/pgvector:pg17` service
+container, `uv sync --frozen`, both pytest chunks, and the frontend
+build + lint ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). No API
+keys — every LLM / embedding call is mocked in the suite.
 
 Full run / test / deploy detail is in [**Running, testing & deploying**](#running-testing--deploying) below.
 

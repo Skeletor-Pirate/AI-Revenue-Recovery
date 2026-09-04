@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend · pytest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: revrec
+          POSTGRES_PASSWORD: revrec
+          POSTGRES_DB: revrec
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U revrec -d revrec"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+psycopg://revrec:revrec@localhost:5432/revrec
+      TEST_DATABASE_URL: postgresql+psycopg://revrec:revrec@localhost:5432/revrec_test
+      # tests mock every LLM / embedding call — no API keys needed.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Create the test database
+        run: >-
+          uv run python -c "import psycopg;
+          c = psycopg.connect('host=localhost port=5432 user=revrec password=revrec dbname=revrec', autocommit=True);
+          c.execute('CREATE DATABASE revrec_test OWNER revrec')"
+
+      - name: Tests — everything except the pipeline suite
+        run: uv run pytest -q --ignore=tests/test_pipeline.py
+
+      - name: Tests — pipeline integration (reseeds the batch per test)
+        run: uv run pytest -q tests/test_pipeline.py
+
+  frontend:
+    name: frontend · build + lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

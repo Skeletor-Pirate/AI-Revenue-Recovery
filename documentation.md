@@ -8,8 +8,10 @@ rationale) and [CLAUDE.md](CLAUDE.md) (the project brief).
 > `architecture.md` to be updated in the same change that adds/alters a file,
 > function, class, endpoint, table, or command.
 
-Last updated: 2026-09-04 — Razorpay test-mode webhook listener (build-order
-step 9): `app/webhooks/listener.py`, `POST /webhooks/razorpay` (HMAC-SHA256
+Last updated: 2026-09-04 — GitHub Actions CI (`.github/workflows/ci.yml`):
+pgvector service container + `uv sync --frozen` + both pytest chunks + frontend
+build/lint, on every push and PR. Prior: 2026-09-04 — Razorpay test-mode
+webhook listener (build-order step 9): `app/webhooks/listener.py`, `POST /webhooks/razorpay` (HMAC-SHA256
 signature check → `EventCreate` → same pipeline), 12 tests. 146 backend tests.
 Prior: 2026-09-04 — RAG knowledge base: `app/rag.py` (pgvector
 `resolved_cases` table + HNSW index) wired into the Diagnosis Agent's free-text
@@ -112,6 +114,7 @@ RAZORPAY BUILDATHON/
 | `scripts/init-db.sql` | First-container-start init: `CREATE DATABASE` for `revrec_test` + the three parallel-build test DBs, and `CREATE EXTENSION vector` in every DB. |
 | `scripts/init-test-db.sql` | Legacy single-test-DB init — superseded by `init-db.sql`, no longer referenced by `docker-compose.yml`. |
 | `.gitignore` | Ignores `__pycache__`, `.venv`, `.pytest_cache`, `.env`, `node_modules`, `frontend/dist`, `**/data/synthetic_events.csv`. |
+| `.github/workflows/ci.yml` | GitHub Actions CI. **backend** job: `pgvector/pgvector:pg17` service container, `uv sync --frozen`, creates `revrec_test`, runs `pytest -q --ignore=tests/test_pipeline.py` then `pytest -q tests/test_pipeline.py`. **frontend** job: `npm ci`, `npm run lint`, `npm run build`. Triggers: push to `main`, all PRs, manual. No secrets — every LLM/embedding call is mocked. |
 | `.claude/skills/` | Claude Code project skills (dev tooling, not shipped): `build-workflow` (mandatory per-task workflow wrapper: check out/update plan.md → verify against Razorpay sources (link list + how-to embedded in its Step 1) → keep architecture.md diagrams current → documentation.md → history.md brief; absorbed the former `razorpay-source-check` skill), `scroll-craft` + `liquid-glass` (vendored UI skills), `glass-scroll-3d` (composite scroll+R3F+glass, for the welcome page), `frontend` (one skill, four modes — `scroll-craft` + `liquid-glass` vendored UI guides, `glass-scroll-3d` composite scroll+R3F+glass for the welcome page, `revrec-dashboard` dashboard UI: tokens + chart catalog + data-table/timeline components, combines dataviz + liquid-glass; each mode is a `GUIDE.md` under `.claude/skills/frontend/<mode>/`). |
 | `plan.md` | The project brief (formerly `CLAUDE.md`; renamed). `CLAUDE.md` is now a short operational guide pointing here. |
 | `readme.md` | **The submission README** (build-order step 10): the-bar mapping, root-cause→intervention table, the fraud-cluster demo moment, run instructions + example output, and the "what broke / what we'd do next" writeup. |
