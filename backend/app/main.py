@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import router as api_router
 from app.config import get_settings
 from app.db import store
 
@@ -39,8 +40,4 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# routers land here as they're built:
-#   from app.api import events, pipeline, metrics
-#   app.include_router(events.router)
-#   app.include_router(pipeline.router)
-#   app.include_router(metrics.router)
+app.include_router(api_router)
