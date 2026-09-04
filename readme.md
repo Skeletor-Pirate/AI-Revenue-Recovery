@@ -10,6 +10,41 @@ exception list.
 
 ---
 
+## Quickstart
+
+Prereqs: **Docker**, **Python 3.11+** with [`uv`](https://docs.astral.sh/uv/),
+**Node 20+**.
+
+```bash
+# 1. database (PostgreSQL 17 + pgvector)
+docker compose up -d
+
+# 2. backend
+cd backend
+uv sync
+cp .env.example .env                       # works as-is; add API keys for the full demo
+uv run python -m app.pipeline --reset       # seed 74 events + fraud cluster, run all 4 agents
+uv run uvicorn app.main:app --reload        # API + Swagger on http://localhost:8000/docs
+
+# 3. dashboard (new terminal)
+cd frontend
+npm install
+printf 'VITE_DATA_SOURCE=live\n' > .env.local
+npm run dev                                 # http://localhost:5173
+```
+
+```bash
+# 4. tests (run in two chunks — the pipeline suite is slow / memory-heavy)
+cd backend
+uv run pytest -q --ignore=tests/test_pipeline.py
+uv run pytest -q tests/test_pipeline.py
+# → 146 passed.  Frontend:  cd frontend && npm run build && npm run lint
+```
+
+Full run / test / deploy detail is in [**Running, testing & deploying**](#running-testing--deploying) below.
+
+---
+
 ## The bar, and where we meet it
 
 > *"Don't just identify the problem. Show measured money recovered across a
@@ -127,48 +162,77 @@ synthetic batch ─▶ Detection ─▶ Diagnosis ─▶ Recovery ─▶ Audit
 
 ---
 
-## Run it
+## Running, testing & deploying
 
-Postgres runs as the `pgvector/pgvector` container (the RAG layer needs the
-`vector` extension).
+### Configuration (`backend/.env`)
 
-```bash
-# repo root
-docker compose up -d          # pgvector/pgvector:pg17 on :5432
-```
+Copy `backend/.env.example`. **Everything runs with no keys set** — the LLM
+falls back to deterministic templates and RAG uses a bundled local embedding
+model. For the full demo:
 
-No Docker? `scripts/pg.ps1 install && scripts/pg.ps1 start` runs an embedded
-Postgres instead — everything works except RAG (no extension support).
+| Key | Effect |
+|---|---|
+| `OPENROUTER_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | LLM classification of unrecognised failure reasons + drafted outreach copy. Auto-detected in that order (`app/llm.py`). OpenRouter's default model is a Claude model. |
+| `OPENAI_API_KEY` | Also used for RAG embeddings (`text-embedding-3-small`); otherwise the local `fastembed` model (`all-MiniLM-L6-v2`, ~90 MB, downloads once). OpenRouter has no embeddings endpoint. |
+| `RAZORPAY_WEBHOOK_SECRET` | Required only to accept live Razorpay test-mode webhooks. |
+| `DATABASE_URL` | Defaults to the Docker container. |
 
-```bash
-# backend/ (uv, Python 3.11+)
-uv sync
-cp .env.example .env
-uv run python -m app.data.generate --reset     # seed 74 events + the fraud cluster
-uv run python -m app.pipeline                   # run all four agents → printed metrics
-uv run pytest -q                                # 113 tests (run in chunks on low-RAM boxes)
-uv run uvicorn app.main:app --reload            # API on :8000/docs
-```
+### Run
 
 ```bash
-# frontend/ (React 19 + Vite + Tailwind v4 + Recharts)
-npm install
-npm run dev                                      # :5173 — renders the bundled sample run
-# live data: set VITE_DATA_SOURCE=live in frontend/.env, with the backend running
+docker compose up -d                            # repo root — Postgres 17 + pgvector on :5432
+
+cd backend && uv sync
+uv run python -m app.pipeline --reset            # seed + run all 4 agents → printed metrics
+uv run python -m app.pipeline --reset --json     # same, raw MetricsBlock as JSON
+uv run uvicorn app.main:app --reload             # API + Swagger on :8000/docs
+
+cd ../frontend && npm install
+npm run dev                                      # :5173 (fixtures mode — no backend needed)
+printf 'VITE_DATA_SOURCE=live\n' > .env.local && npm run dev   # live mode (needs the API)
 ```
 
-**The LLM is optional.** Set `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` **or**
-`OPENAI_API_KEY` (auto-detected in that order; `app/llm.py`) to enable the
-Diagnosis free-text fallback and the drafted outreach copy. With no key,
-Diagnosis falls back to `unknown` and Recovery uses plain-English templates —
-everything runs offline. OpenRouter's default model is a Claude model.
+Dashboard routes: `/` KPIs + charts · `/queue` at-risk table → decision-trail
+drawer (audit timeline + RAG "similar cases") · `/recovery` analytics ·
+`/exceptions` fraud-cluster alert + honest exception list.
 
-**RAG embeddings** use `OPENAI_API_KEY` (`text-embedding-3-small`) when set,
-otherwise a bundled local model (`fastembed` / `all-MiniLM-L6-v2`, ~90 MB, one
-download). OpenRouter has no embeddings endpoint, so an OpenRouter-only setup
-uses the local model.
+**No Docker?** `powershell -File scripts/pg.ps1 install` then `… start` runs an
+embedded Postgres — everything works *except* RAG (no `vector` extension there).
 
-### Example output (`uv run python -m app.pipeline`, seed 42)
+**Live Razorpay webhooks:** set `RAZORPAY_WEBHOOK_SECRET`, run `ngrok http 8000`,
+register `https://<id>.ngrok.io/webhooks/razorpay` in the Razorpay **test-mode**
+dashboard, and trigger a test `payment.failed` — it flows into the same pipeline.
+
+### Test
+
+```bash
+cd backend
+uv run pytest -q --ignore=tests/test_pipeline.py   # 140 — fast
+uv run pytest -q tests/test_pipeline.py            # 6 — reseeds the batch per test (~3 min)
+# → 146 passed total. test_rag / test_api / 5 webhook tests need the pgvector container.
+
+cd ../frontend
+npm run build          # tsc -b && vite build
+npm run lint           # oxlint
+```
+
+### Deploy
+
+Not deployed for the buildathon (it's a local prototype), but it's a standard
+containerisable stack:
+
+| Component | Deploy shape |
+|---|---|
+| **Database** | Managed Postgres 16+ with the `vector` extension — Amazon **Aurora PostgreSQL** / RDS, Supabase, Neon, or the `pgvector/pgvector` image on any container host. Run `uv run python -m app.db.store` once to create the schema. |
+| **Backend** | `uv run uvicorn app.main:app` (or `gunicorn -k uvicorn.workers.UvicornWorker`) behind a reverse proxy on any Python host — Fly.io, Render, Railway, ECS/Cloud Run. Set `DATABASE_URL`, `FRONTEND_ORIGIN`, and any LLM / `RAZORPAY_WEBHOOK_SECRET` keys as env vars. Stateless — scale horizontally. |
+| **Frontend** | `npm run build` → static `frontend/dist/`, served from any CDN / static host (Vercel, Netlify, S3+CloudFront, GitHub Pages). Set `VITE_DATA_SOURCE=live` and `VITE_API_BASE_URL=https://<your-api>` at build time. |
+| **Pipeline runs** | `uv run python -m app.pipeline` as a scheduled job (cron / ECS scheduled task), or drive it via `POST /api/pipeline/run`. |
+| **Webhooks** | Point the Razorpay test-mode webhook at `https://<your-api>/webhooks/razorpay`; no tunnel needed once the API is public. |
+
+CORS is locked to `FRONTEND_ORIGIN`; the webhook endpoint verifies every
+signature; no secrets are committed.
+
+### Example pipeline output (seed 42)
 
 ```
 events in batch         : 74
@@ -184,14 +248,14 @@ exception list (40 — honest, not cherry-picked): …
 
 | # | What broke | Fix |
 |---|---|---|
-| 1 | **Docker was unavailable** (Docker Desktop needs WSL2; Win 11 Home has no Hyper-V). `winget`/EDB Postgres install returned 403. | `scripts/pg.ps1` — a self-contained PostgreSQL 17 from zonky's embedded-postgres binaries under `%LOCALAPPDATA%`, no admin, no service. |
+| 1 | **We believed Docker was unavailable** (early notes said Docker Desktop needs WSL2 and Win 11 Home can't run it); `winget`/EDB Postgres install returned 403. | Built `scripts/pg.ps1` — a self-contained PostgreSQL 17 from zonky's embedded-postgres binaries, no admin. *Later corrected — see #8.* |
 | 2 | **`Decimal(<float>)` blew the `NUMERIC(14,2)` bound** — binary-float expansion produced 15+ digit amounts in the generator. | Quantise via `Decimal(str(round(value, 2)))` everywhere; money is `Decimal` end-to-end, quantised to paise. |
 | 3 | **Fraud "tight time clustering" had nothing to test against** — the generator inserts the whole batch in one pass, so every `created_at` was identical and the ≤60-min clause was vacuous. | Added optional `EventCreate.created_at`; the generator now backdates the batch over 14 days and places the cluster in one 40-minute window. The full five-part signature is now real. |
 | 4 | **Real Razorpay failure codes ≠ our first guesses** — we'd used `insufficient_funds` / `incorrect_otp`. | Verified against the test-card-details docs; switched to `insufficient_fund`, `authentication_failed`, `payment_timed_out`, `card_number_invalid`, etc. |
 | 5 | **Parallel agent builds stomped the test DB** — five builders each running pytest, whose per-test fixture does `DROP TABLE`. | Each builder ran against a dedicated database (`revrec_test_diag` / `_rec` / `_aud`); merge + CI use `revrec_test`. |
 | 6 | **Human-approval-gated events showed "no reason recorded"** in the exception list — the Audit agent only read `routed_to_exception` / `halted_stopping_rule`. | Audit now also derives the reason from the `awaiting_human_approval` payload (`proposed_action` + `threshold`). |
 | 7 | **The full pytest run OOM-killed** a single process (batch-reseeding integration tests). | Documented running the suite in two chunks; a real fix (transaction-rollback fixtures / a smaller integration batch) is on the list below. |
-| 8 | **"Docker is unavailable on this machine"** — the original docs asserted Docker needs WSL2 and Win 11 Home can't run it. Docker Desktop was actually installed and WSL2 works. | Switched Postgres to the `pgvector/pgvector` container so pgvector is native; kept `scripts/pg.ps1` as a no-Docker fallback. |
+| 8 | **The "Docker is unavailable" assumption (#1) was wrong.** When RAG needed pgvector we re-checked — Docker Desktop *was* installed and WSL2 works. | Switched Postgres to the `pgvector/pgvector` container so pgvector is native; kept `scripts/pg.ps1` as a no-Docker fallback (RAG disabled there). Lesson: re-verify environment assumptions when a new requirement appears. |
 | 9 | **pgvector / hnswlib wouldn't install** on the embedded Postgres / without MS C++ Build Tools. | pgvector is a Postgres *extension*, not a pip package — solved by #8 (container image ships it). |
 | 10 | **A `reset_db` table-ordering bug** surfaced when the new `resolved_cases` table joined the metadata — an explicit reversed drop list broke intermittently across the pipeline tests. | `reset_db` now passes `tables=None` (all, dependency-ordered) when pgvector is on; the explicit list is only used to *exclude* `resolved_cases` on the fallback path. |
 
