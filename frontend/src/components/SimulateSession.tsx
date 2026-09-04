@@ -36,6 +36,49 @@ const OUTCOME_COLOR: Record<PlaygroundOutcome, string> = {
 
 type TurnWithAudio = PlaygroundTurn & { audio_base64?: string }
 
+interface SpeechRecognitionResultItem {
+  transcript: string
+}
+
+interface SpeechRecognitionResult {
+  [index: number]: SpeechRecognitionResultItem
+  length: number
+}
+
+interface SpeechRecognitionResults {
+  [index: number]: SpeechRecognitionResult
+  length: number
+}
+
+interface SpeechRecognitionEvent {
+  resultIndex: number
+  results: SpeechRecognitionResults
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onstart: () => void
+  onresult: (event: SpeechRecognitionEvent) => void
+  onerror: (event: { error: string }) => void
+  onend: () => void
+  start: () => void
+  stop: () => void
+  abort: () => void
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionInstance
+
+const getSpeechRecognition = (): SpeechRecognitionConstructor | null => {
+  if (typeof window === 'undefined') return null
+  const win = window as unknown as {
+    SpeechRecognition?: SpeechRecognitionConstructor
+    webkitSpeechRecognition?: SpeechRecognitionConstructor
+  }
+  return win.SpeechRecognition || win.webkitSpeechRecognition || null
+}
+
 export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) => {
   const [phase, setPhase] = useState<Phase>('setup')
   const [mode, setMode] = useState<PlaygroundMode>('interactive')
@@ -54,9 +97,19 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
   const [callDuration, setCallDuration] = useState(0)
   const [isMuted, setIsMuted] = useState(false)
   const [activeTab, setActiveTab] = useState<'interface' | 'transcript'>('interface')
+  const [isListening, setIsListening] = useState(false)
+  const [speechSupported, setSpeechSupported] = useState(false)
+  const [isInterrupted, setIsInterrupted] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const transcriptEndRef = useRef<HTMLDivElement | null>(null)
+  const cancelSpeechRef = useRef<(() => void) | null>(null)
+  const autoPlayAbortRef = useRef(false)
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null)
+
+  useEffect(() => {
+    setSpeechSupported(!!getSpeechRecognition())
+  }, [])
 
   // Call timer
   useEffect(() => {
@@ -74,6 +127,100 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
+  // Instant Barge-in: Cut off agent voice instantly when human speaks, types, or interrupts
+  const interruptSpeech = () => {
+    autoPlayAbortRef.current = true
+    if (cancelSpeechRef.current) {
+      cancelSpeechRef.current()
+    } else {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+        audioRef.current = null
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+      setSpeakingIndex(null)
+    }
+    setIsInterrupted(true)
+    setTimeout(() => setIsInterrupted(false), 3500)
+  }
+
+  const startListening = () => {
+    // 1. Instant Barge-in: cut off any speaking AI right away
+    interruptSpeech()
+
+    const SpeechRec = getSpeechRecognition()
+    if (!SpeechRec) {
+      setError('Speech recognition is not available in this browser. Please type your reply.')
+      return
+    }
+
+    try {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort()
+        } catch {
+          // ignore
+        }
+      }
+
+      const rec = new SpeechRec()
+      rec.continuous = false
+      rec.interimResults = true
+      rec.lang = 'hi-IN'
+
+      rec.onstart = () => {
+        setIsListening(true)
+        setError(null)
+      }
+
+      rec.onresult = (e: SpeechRecognitionEvent) => {
+        let transcript = ''
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const item = e.results[i]?.[0]
+          if (item?.transcript) {
+            transcript += item.transcript
+          }
+        }
+        if (transcript) {
+          setInput(transcript)
+        }
+      }
+
+      rec.onerror = (e: { error: string }) => {
+        setIsListening(false)
+        if (e.error === 'not-allowed') {
+          setError('Microphone access was denied. Please allow microphone permissions or type your message.')
+        } else if (e.error !== 'no-speech') {
+          console.warn('Speech recognition warning:', e.error)
+        }
+      }
+
+      rec.onend = () => {
+        setIsListening(false)
+      }
+
+      recognitionRef.current = rec
+      rec.start()
+    } catch (err) {
+      console.warn('Speech recognition start failed:', err)
+      setIsListening(false)
+    }
+  }
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop()
+      } catch {
+        // ignore
+      }
+    }
+    setIsListening(false)
+  }
+
   const reset = () => {
     setPhase('setup')
     setHistory([])
@@ -84,6 +231,20 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
     setError(null)
     setCallDuration(0)
     setActiveTab('interface')
+    setIsListening(false)
+    setIsInterrupted(false)
+    autoPlayAbortRef.current = true
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort()
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null
+    }
+    if (cancelSpeechRef.current) {
+      cancelSpeechRef.current()
+    }
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current = null
@@ -109,6 +270,30 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
       return
     }
 
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      cancelSpeechRef.current = null
+      setSpeakingIndex(null)
+      onEnd?.()
+    }
+
+    cancelSpeechRef.current = () => {
+      if (finished) return
+      finished = true
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.currentTime = 0
+        audioRef.current = null
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel()
+      }
+      setSpeakingIndex(null)
+      onEnd?.()
+    }
+
     // 1. Neural Sarvam AI Audio
     if (turn.audio_base64) {
       if (audioRef.current) {
@@ -117,10 +302,6 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
       const el = new Audio(`data:audio/wav;base64,${turn.audio_base64}`)
       audioRef.current = el
       setSpeakingIndex(index)
-      const finish = () => {
-        setSpeakingIndex(null)
-        onEnd?.()
-      }
       el.onended = finish
       el.onerror = finish
       el.play().catch(finish)
@@ -135,17 +316,13 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
       // Customer voice is lower pitch (0.85); Agent voice is higher pitch (1.05)
       utterance.pitch = turn.speaker === 'agent' ? 1.05 : 0.85
       setSpeakingIndex(index)
-      const finish = () => {
-        setSpeakingIndex(null)
-        onEnd?.()
-      }
       utterance.onend = finish
       utterance.onerror = finish
       window.speechSynthesis.speak(utterance)
       return
     }
 
-    onEnd?.()
+    finish()
   }
 
   const playTurnVoiceAsync = (turn: TurnWithAudio, index: number): Promise<void> => {
@@ -201,6 +378,8 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
   const send = async (overrideMessage?: string) => {
     const message = (overrideMessage ?? input).trim()
     if (!message || busy) return
+    interruptSpeech()
+    if (isListening) stopListening()
     setBusy(true)
     setError(null)
     try {
@@ -218,6 +397,7 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
 
   const advance = async () => {
     if (busy) return
+    autoPlayAbortRef.current = false
     setBusy(true)
     setError(null)
     try {
@@ -229,9 +409,12 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
 
       // Step 1: Customer speaks out loud first
       playTurnVoice(res.customer_turn as TurnWithAudio, customerIdx, () => {
+        if (autoPlayAbortRef.current) return
         // Step 2: Once customer finishes speaking, Agent speaks
         setTimeout(() => {
+          if (autoPlayAbortRef.current) return
           playTurnVoice(res.agent_turn as TurnWithAudio, agentIdx, () => {
+            if (autoPlayAbortRef.current) return
             applyOutcome(res.outcome, res.reasoning)
           })
         }, 400)
@@ -245,11 +428,14 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
 
   const playToResolution = async () => {
     let current = history
+    autoPlayAbortRef.current = false
     setBusy(true)
     setError(null)
     try {
       for (let i = 0; i < 6; i++) {
+        if (autoPlayAbortRef.current) break
         const res = await dataSource.advancePlayground(eventId, current, channel)
+        if (autoPlayAbortRef.current) break
         current = res.history
         setHistory(res.history)
 
@@ -258,10 +444,13 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
 
         // Play Customer voice, wait for it to finish
         await playTurnVoiceAsync(res.customer_turn as TurnWithAudio, customerIdx)
+        if (autoPlayAbortRef.current) break
         await new Promise((r) => setTimeout(r, 400))
+        if (autoPlayAbortRef.current) break
 
         // Play Agent voice, wait for it to finish
         await playTurnVoiceAsync(res.agent_turn as TurnWithAudio, agentIdx)
+        if (autoPlayAbortRef.current) break
         applyOutcome(res.outcome, res.reasoning)
 
         if (res.outcome !== 'ongoing') break
@@ -548,7 +737,7 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                                   : `${persona.phone_masked || '+91 ••••••••••'} · Customer`}
                               </p>
 
-                              <div className="mt-3 flex items-center gap-2">
+                              <div className="mt-3 flex flex-col items-center gap-2">
                                 <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-colors ${
                                   phase === 'ended'
                                     ? 'bg-slate-800 text-slate-400'
@@ -575,6 +764,49 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                                     ? 'Resolver (Agent) Speaking...'
                                     : `Connected (${formatTimer(callDuration)})`}
                                 </span>
+
+                                {/* ✋ Prominent Barge-In Button when Agent is speaking */}
+                                {speakingIndex !== null && activeSpeaker === 'agent' && phase === 'live' && (
+                                  <button
+                                    type="button"
+                                    onClick={interruptSpeech}
+                                    className="py-1.5 px-4 rounded-full bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/40 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 cursor-pointer animate-pulse"
+                                    title="Interrupt agent speech immediately (Barge-in)"
+                                  >
+                                    <span>✋ Interrupt Agent</span>
+                                    <span className="text-[10px] opacity-90 font-medium">· Speak Now</span>
+                                  </button>
+                                )}
+
+                                {/* Auto mode Takeover during call */}
+                                {mode === 'auto' && !takenOver && phase === 'live' && speakingIndex !== null && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      interruptSpeech()
+                                      setTakenOver(true)
+                                    }}
+                                    className="py-1 px-3 rounded-full bg-indigo-600/80 hover:bg-indigo-500 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                                  >
+                                    <span>✋ Interrupt & Take Over Call</span>
+                                  </button>
+                                )}
+
+                                {/* Interrupted visual confirmation */}
+                                {isInterrupted && (
+                                  <div className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-medium flex items-center gap-1.5 animate-bounce">
+                                    <span>⚡ You interrupted Priya</span>
+                                    <span className="text-[10px] text-amber-400 font-normal">· Call listening...</span>
+                                  </div>
+                                )}
+
+                                {/* Listening indicator */}
+                                {isListening && (
+                                  <div className="px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[11px] font-medium flex items-center gap-2 animate-pulse">
+                                    <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping" />
+                                    <span>🎙️ Listening to you... (Speak now)</span>
+                                  </div>
+                                )}
                               </div>
                             </>
                           )
@@ -587,12 +819,14 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                               <span
                                 key={i}
                                 className={`w-1 rounded-full transition-all duration-200 ${
-                                  speakingIndex !== null
+                                  isListening
+                                    ? 'bg-rose-400 animate-pulse'
+                                    : speakingIndex !== null
                                     ? 'bg-indigo-400 animate-pulse'
                                     : 'bg-slate-700'
                                 }`}
                                 style={{
-                                  height: speakingIndex !== null ? `${h}px` : '6px',
+                                  height: isListening || speakingIndex !== null ? `${h}px` : '6px',
                                   animationDelay: `${i * 80}ms`,
                                 }}
                               />
@@ -600,6 +834,32 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                           </div>
                         )}
                       </div>
+
+                      {/* Live Call Microphone Speak Button */}
+                      {phase === 'live' && (mode === 'interactive' || takenOver) && (
+                        <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-3 shadow-md">
+                          <button
+                            type="button"
+                            onClick={isListening ? stopListening : startListening}
+                            disabled={busy}
+                            className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                              isListening
+                                ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/40 animate-pulse'
+                                : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white shadow-md shadow-indigo-600/25 hover:scale-[1.02] active:scale-95'
+                            }`}
+                          >
+                            <span className="text-base">{isListening ? '🛑' : '🎙️'}</span>
+                            <span>
+                              {isListening ? 'Stop & Send Spoken Reply' : 'Speak into Microphone (Interrupts Agent)'}
+                            </span>
+                          </button>
+                          {speechSupported && !isListening && (
+                            <span className="text-[10px] text-slate-400 font-mono hidden sm:inline-block">
+                              VOICE READY
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       {/* Current Spoken Dialogue */}
                       {history.length > 0 && (() => {
@@ -637,9 +897,12 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                             ].map((chip) => (
                               <button
                                 key={chip}
-                                onClick={() => send(chip)}
+                                onClick={() => {
+                                  interruptSpeech()
+                                  send(chip)
+                                }}
                                 disabled={busy}
-                                className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition-colors disabled:opacity-50"
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition-colors disabled:opacity-50 cursor-pointer"
                               >
                                 {chip}
                               </button>
@@ -857,9 +1120,29 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                   }}
                   className="flex items-end gap-2"
                 >
+                  {isCall && (
+                    <button
+                      type="button"
+                      onClick={isListening ? stopListening : startListening}
+                      className={`p-2.5 rounded-xl border transition-all flex items-center justify-center cursor-pointer ${
+                        isListening
+                          ? 'bg-rose-600 border-rose-500 text-white animate-pulse shadow-md shadow-rose-600/40'
+                          : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
+                      }`}
+                      title={isListening ? 'Stop listening' : 'Speak using microphone (interrupts agent)'}
+                    >
+                      <span className="text-sm">{isListening ? '🛑' : '🎙️'}</span>
+                    </button>
+                  )}
                   <textarea
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onFocus={() => {
+                      if (speakingIndex !== null) interruptSpeech()
+                    }}
+                    onChange={(e) => {
+                      if (speakingIndex !== null) interruptSpeech()
+                      setInput(e.target.value)
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault()
@@ -868,8 +1151,10 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                     }}
                     rows={isCall ? 1 : 2}
                     placeholder={
-                      isCall
-                        ? 'Speak or type your reply to the agent…'
+                      isListening
+                        ? 'Listening to your voice...'
+                        : isCall
+                        ? 'Speak or type your reply (interrupts agent)…'
                         : `Message as ${persona.name}…`
                     }
                     className="flex-1 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
@@ -877,11 +1162,11 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                   <button
                     type="submit"
                     disabled={busy || !input.trim()}
-                    className={`px-4 py-2.5 rounded-xl font-semibold text-xs text-white disabled:opacity-50 transition-all ${
+                    className={`px-4 py-2.5 rounded-xl font-semibold text-xs text-white disabled:opacity-50 transition-all cursor-pointer ${
                       isCall ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-emerald-600 hover:bg-emerald-500'
                     }`}
                   >
-                    {busy ? '…' : 'Send'}
+                    {busy ? '…' : isCall ? 'Speak / Send' : 'Send'}
                   </button>
                 </form>
               )}

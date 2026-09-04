@@ -6,6 +6,17 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — Duplex Voice Call: Human Barge-in / Interruptibility & Live Microphone
+
+- **Did:**
+  - **Human Barge-in / Interruptibility:** Upgraded the Voice Call simulation to feel like a real duplex phone call. If the AI agent is speaking and the human interrupts (via clicking the prominent `✋ Interrupt Agent` button, speaking into the microphone, typing, focusing the input box, or clicking a quick reply chip), the agent's audio playback (both Sarvam neural WAV and browser SpeechSynthesis) is **instantly silenced**.
+  - **Live Microphone Input (Web Speech API):** Added zero-config speech recognition (`SpeechRecognition` / `webkitSpeechRecognition`) supporting Indian English and Hindi (`hi-IN`). Users can speak directly into their microphone hands-free; the speech is transcribed in real-time and interrupts the AI immediately.
+  - **Autonomous Mode Takeover:** Added instant `✋ Interrupt & Take Over Call` during two-AI conversations (`mode="auto"`), immediately aborting the autoplay loop, silencing the AI audio, and handing call control to the human reviewer.
+  - **Visual Call Cues:** Added real-time dynamic states (`🎙️ Listening to you...`, `⚡ You interrupted Priya`, audio visualizer reacting to both AI speaking and user microphone activity).
+  - **Build & Lint:** `npm run lint` 0 errors, `npm run build` clean.
+
+---
+
 ## 2026-09-04 — Promise-to-Pay (PTP) State Machine Enforcement & Simulated Payment Webhook
 
 - **Did:**
