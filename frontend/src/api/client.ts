@@ -15,6 +15,7 @@ import type {
   PlaygroundChannel,
   PlaygroundMessageResponse,
   PlaygroundMode,
+  PlaygroundPayResponse,
   PlaygroundStartResponse,
   PlaygroundTurn,
 } from './types'
@@ -104,6 +105,11 @@ export const api = {
   advancePlayground: (eventId: string, history: PlaygroundTurn[], channel: string) =>
     request<PlaygroundAdvanceResponse>(
       `/api/events/${encodeURIComponent(eventId)}/playground/advance`,
+      { method: 'POST', body: JSON.stringify({ history, channel }) },
+    ),
+  simulatePlaygroundPayment: (eventId: string, history: PlaygroundTurn[], channel: string) =>
+    request<PlaygroundPayResponse>(
+      `/api/events/${encodeURIComponent(eventId)}/playground/pay`,
       { method: 'POST', body: JSON.stringify({ history, channel }) },
     ),
 

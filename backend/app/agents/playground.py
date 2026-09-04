@@ -45,9 +45,9 @@ from app.db.store import Event, RootCause
 
 Mode = Literal["interactive", "auto"]
 Channel = Literal["call", "message"]
-Outcome = Literal["ongoing", "resolved", "escalated", "halted"]
+Outcome = Literal["ongoing", "ptp_promised", "resolved", "escalated", "halted"]
 
-_VALID_OUTCOMES = ("ongoing", "resolved", "escalated", "halted")
+_VALID_OUTCOMES = ("ongoing", "ptp_promised", "resolved", "escalated", "halted")
 
 # root_cause -> channel. Payment-failure causes suit a phone call (higher
 # urgency, needs a real-time yes/no); nudges and B2B chasers suit a message.
@@ -128,9 +128,11 @@ def _agent_system_prompt(event: Event, persona: dict[str, Any], channel: Channel
         "Bounded authority: you may offer at most a 10% discount or a short extension; anything "
         "larger, or any request you're unsure about, needs human sign-off -> outcome 'escalated'. "
         "If the other side is hostile, evasive, or the story doesn't add up -> outcome 'halted'. "
-        "If they agree to pay / the matter is settled -> outcome 'resolved'. Otherwise 'ongoing'. "
+        "FINTECH PRINCIPLE: If the customer agrees to pay, commits to a date, or asks for a payment link, "
+        "money is not yet captured — mark outcome as 'ptp_promised' (Promise to Pay recorded). "
+        "Only mark 'resolved' if they confirm they have completed payment or paid. Otherwise 'ongoing'. "
         "Reply with ONLY a JSON object: "
-        '{"reply": "<your next line>", "outcome": "ongoing"|"resolved"|"escalated"|"halted", '
+        '{"reply": "<your next line>", "outcome": "ongoing"|"ptp_promised"|"resolved"|"escalated"|"halted", '
         '"reasoning": "<one short sentence, why this outcome>"}.'
     )
 
@@ -253,15 +255,15 @@ def _fallback_agent_reply(persona: dict[str, Any], message: str, turn_index: int
             "reasoning": f"Explained failure root cause ({rc}) in response to customer inquiry.",
         }
 
-    # 4. Genuine agreement to pay / proceed
+    # 4. Genuine agreement to pay / proceed -> Promise to Pay (PTP)
     has_agreement = any(p in text for p in _AGREE_PHRASES) or (
         text in {"haan", "yes", "theek hai", "ok", "okay", "sure", "done"} and not has_question
     )
     if has_agreement:
         return {
-            "reply": f"Shukriya {persona['name']} ji! Maine Rs {persona['amount']} ka secure Razorpay payment link send kar diya hai: https://rzp.io/i/rec_{persona.get('amount', 0)}. Payment complete hote hi receipt mil jayegi.",
-            "outcome": "resolved",
-            "reasoning": "Customer agreed to pay / requested payment link.",
+            "reply": f"Shukriya {persona['name']} ji! Maine Rs {persona['amount']} ka secure Razorpay payment link bhej diya hai: https://rzp.io/i/rec_{persona.get('amount', 0)}. Aapka Promise-to-Pay log ho gaya hai. Link par click karke payment complete karte hi receipt mil jayegi.",
+            "outcome": "ptp_promised",
+            "reasoning": "Customer committed to pay; Payment Link dispatched; Promise-to-Pay recorded (max 3 reminders scheduled).",
         }
 
     # 5. Stalled without resolution after multiple turns
@@ -452,3 +454,34 @@ def advance_conversation(
         "reasoning": agent_result["reasoning"],
         "history": new_history,
     }
+
+
+def simulate_payment(
+    event: Event,
+    history: list[dict[str, str]],
+    channel: Channel = "call",
+    *,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """Simulates the customer clicking the payment link and completing payment (payment.captured).
+    Transitions status from ptp_promised to true resolved, confirming verified revenue recovery."""
+    s = settings or get_settings()
+    persona = build_persona(event)
+    tx_id = f"pay_sim_{event.event_id[-6:].replace('_', '')}{random.randint(100, 999)}"
+
+    reply_text = (
+        f"Payment of Rs {persona['amount']} received successfully! "
+        f"Razorpay Transaction ID: {tx_id}. Receipt generated. Case marked RESOLVED."
+    )
+    confirmation_turn = {"speaker": "agent", "text": reply_text}
+    new_history = [*history, confirmation_turn]
+
+    return {
+        "turn": _with_audio(confirmation_turn, channel, s),
+        "outcome": "resolved",
+        "reasoning": f"Customer completed payment via Razorpay link (webhook payment.captured: {tx_id}). Verified revenue recovery.",
+        "history": new_history,
+        "payment_id": tx_id,
+        "amount": str(persona["amount"]),
+    }
+

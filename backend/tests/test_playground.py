@@ -98,17 +98,23 @@ def test_start_session_works_without_an_llm_key():
     assert session["history"] == [session["opening_turn"]]
 
 
-def test_interactive_fallback_reaches_resolved():
+def test_interactive_fallback_reaches_ptp():
     event = _event()
     session = pg.start_session(event, mode="interactive", settings=_NO_LLM)
     result = pg.send_message(
         event, session["history"], "Haan theek hai, main abhi pay karta hoon", "call",
         settings=_NO_LLM,
     )
-    assert result["outcome"] == "resolved"
+    assert result["outcome"] == "ptp_promised"
     assert result["turn"]["speaker"] == "agent"
     assert result["history"][-1] == result["turn"]
     assert result["history"][-2] == {"speaker": "customer", "text": "Haan theek hai, main abhi pay karta hoon"}
+
+    # Now simulate customer clicking link and completing payment (payment.captured)
+    paid = pg.simulate_payment(event, result["history"], "call", settings=_NO_LLM)
+    assert paid["outcome"] == "resolved"
+    assert "pay_sim_" in paid["payment_id"]
+    assert paid["history"][-1] == paid["turn"]
 
 
 def test_interactive_fallback_escalates_on_fraud_dispute():

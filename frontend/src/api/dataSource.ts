@@ -19,6 +19,7 @@ import type {
   PlaygroundMessageResponse,
   PlaygroundMode,
   PlaygroundOutcome,
+  PlaygroundPayResponse,
   PlaygroundStartResponse,
   PlaygroundTurn,
   TicketDetailResponse,
@@ -139,9 +140,9 @@ const fixtureAgentReply = (
     (!hasQuestion && /^(haan|yes|theek hai|ok|okay|sure|done)$/.test(text))
   if (hasAgreement) {
     return {
-      reply: `Shukriya ${name} ji! Maine secure Razorpay payment link send kar diya hai: https://rzp.io/i/rec_pay. Pay karte hi aapka receipt generate ho jayega.`,
-      outcome: 'resolved',
-      reasoning: 'Customer agreed to pay / confirmed resolution.',
+      reply: `Shukriya ${name} ji! Maine secure Razorpay payment link send kar diya hai: https://rzp.io/i/rec_pay. Aapka Promise-to-Pay schedule ho gaya hai. Link se pay karte hi receipt mil jayegi.`,
+      outcome: 'ptp_promised',
+      reasoning: 'Customer agreed to pay; Payment Link dispatched; Promise-to-Pay recorded.',
     }
   }
   if (turnIndex >= 3) {
@@ -410,6 +411,29 @@ export const dataSource = {
       outcome: result.outcome,
       reasoning: result.reasoning,
       history: [...withCustomer, agentTurn],
+    })
+  },
+
+  async simulatePlaygroundPayment(
+    eventId: string,
+    history: PlaygroundTurn[],
+    channel: string,
+  ): Promise<PlaygroundPayResponse> {
+    if (IS_LIVE) return api.simulatePlaygroundPayment(eventId, history, channel)
+    const event = fixtureEvent(eventId)
+    const persona = fixturePersona(event)
+    const txId = `pay_sim_${eventId.slice(-4)}${Math.floor(Math.random() * 900 + 100)}`
+    const turn: PlaygroundTurn = {
+      speaker: 'agent',
+      text: `Payment of Rs ${persona.amount} received successfully! Razorpay Transaction ID: ${txId}. Receipt generated. Case marked RESOLVED.`,
+    }
+    return settle({
+      turn,
+      outcome: 'resolved',
+      reasoning: `Customer completed payment via Razorpay link (webhook payment.captured: ${txId}). Verified revenue recovery.`,
+      history: [...history, turn],
+      payment_id: txId,
+      amount: persona.amount,
     })
   },
 

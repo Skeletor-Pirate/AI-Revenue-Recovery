@@ -87,6 +87,11 @@ class PlaygroundAdvanceRequest(BaseModel):
     channel: str = Field(default="call", description="'call' or 'message'")
 
 
+class PlaygroundPayRequest(BaseModel):
+    history: list[dict[str, str]] = Field(description="Transcript so far, [{speaker, text}, ...]")
+    channel: str = Field(default="call", description="'call' or 'message'")
+
+
 @router.get("/events")
 def list_events() -> dict[str, Any]:
     with store.get_session() as session:
@@ -190,6 +195,18 @@ def playground_advance(event_id: str, body: PlaygroundAdvanceRequest) -> dict[st
         if event is None:
             raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
         return playground.advance_conversation(
+            event, body.history, body.channel, settings=get_settings()
+        )
+
+
+@router.post("/events/{event_id}/playground/pay")
+def playground_pay(event_id: str, body: PlaygroundPayRequest) -> dict[str, Any]:
+    """Simulate customer clicking the payment link and completing payment (Razorpay payment.captured)."""
+    with store.get_session() as session:
+        event = store.get_event(session, event_id)
+        if event is None:
+            raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
+        return playground.simulate_payment(
             event, body.history, body.channel, settings=get_settings()
         )
 

@@ -279,7 +279,7 @@ export interface PipelineRunResponse {
 
 export type PlaygroundMode = 'interactive' | 'auto'
 export type PlaygroundChannel = 'call' | 'message'
-export type PlaygroundOutcome = 'ongoing' | 'resolved' | 'escalated' | 'halted'
+export type PlaygroundOutcome = 'ongoing' | 'ptp_promised' | 'resolved' | 'escalated' | 'halted'
 export type PlaygroundSpeaker = 'agent' | 'customer'
 
 export interface PlaygroundTurn {
@@ -323,4 +323,13 @@ export interface PlaygroundAdvanceResponse {
   outcome: PlaygroundOutcome
   reasoning: string
   history: PlaygroundTurn[]
+}
+
+export interface PlaygroundPayResponse {
+  turn: PlaygroundTurn
+  outcome: PlaygroundOutcome
+  reasoning: string
+  history: PlaygroundTurn[]
+  payment_id: string
+  amount: string
 }

@@ -20,15 +20,17 @@ type Phase = 'setup' | 'connecting' | 'live' | 'ended'
 
 const OUTCOME_LABEL: Record<PlaygroundOutcome, string> = {
   ongoing: 'In progress',
-  resolved: 'Resolved · Payment Succeeded',
-  escalated: 'Escalated to Human Review',
-  halted: 'Halted · Security / Risk Check',
+  ptp_promised: '🤝 Promise to Pay Recorded · Awaiting Payment Settlement',
+  resolved: '✅ Verified Resolved · Payment Captured (Revenue Recovered)',
+  escalated: '⚠️ Escalated to Human Review (/attention)',
+  halted: '🛑 Halted · Security / Risk Check',
 }
 
 const OUTCOME_COLOR: Record<PlaygroundOutcome, string> = {
   ongoing: 'text-slate-300 bg-slate-800/60 border-slate-700',
-  resolved: 'text-emerald-300 bg-emerald-950/60 border-emerald-700/60 shadow-lg shadow-emerald-950/40',
-  escalated: 'text-amber-300 bg-amber-950/60 border-amber-700/60 shadow-lg shadow-amber-950/40',
+  ptp_promised: 'text-amber-300 bg-amber-950/60 border-amber-500/60 shadow-lg shadow-amber-950/40',
+  resolved: 'text-emerald-300 bg-emerald-950/60 border-emerald-500/60 shadow-lg shadow-emerald-950/40',
+  escalated: 'text-rose-300 bg-rose-950/60 border-rose-700/60 shadow-lg shadow-rose-950/40',
   halted: 'text-red-300 bg-red-950/60 border-red-700/60 shadow-lg shadow-red-950/40',
 }
 
@@ -173,8 +175,26 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
   const applyOutcome = (next: PlaygroundOutcome, why: string) => {
     setOutcome(next)
     setReasoning(why)
-    if (next !== 'ongoing') {
+    if (next !== 'ongoing' && next !== 'ptp_promised') {
       setPhase('ended')
+    }
+  }
+
+  const handleCompletePayment = async () => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await dataSource.simulatePlaygroundPayment(eventId, history, channel)
+      setHistory(res.history)
+      playTurnVoice(res.turn as TurnWithAudio, res.history.length - 1)
+      setOutcome('resolved')
+      setReasoning(res.reasoning)
+      setPhase('ended')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not complete simulated payment')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -627,6 +647,31 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                           </div>
                         </div>
                       )}
+
+                      {/* PTP Action Banner in Call Mode */}
+                      {outcome === 'ptp_promised' && (
+                        <div className="p-4 rounded-xl bg-amber-950/50 border border-amber-500/50 text-amber-200 text-xs shadow-lg flex flex-col gap-2 animate-fade-in">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold flex items-center gap-1.5 text-amber-300">
+                              <span>🤝 Promise to Pay (PTP) Recorded</span>
+                            </span>
+                            <span className="text-[10px] font-mono bg-amber-900/60 px-2 py-0.5 rounded text-amber-200 border border-amber-700/50">
+                              SCHEDULED: 1 OF 3 REMINDERS
+                            </span>
+                          </div>
+                          <p className="text-[11px] opacity-90 leading-relaxed text-slate-300">
+                            Customer committed to pay. Escalation paused. Max 3 automated reminders with 24h cooldown. If unfulfilled, case auto-escalates to /attention queue.
+                          </p>
+                          <button
+                            onClick={handleCompletePayment}
+                            disabled={busy}
+                            className="mt-1 py-2.5 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                          >
+                            <span>⚡ Customer Clicks Link & Completes Payment (Simulate Webhook)</span>
+                            <span>→</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -680,28 +725,50 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
                           )
                         })}
 
-                        {/* Interactive Payment Link Card when Resolved */}
-                        {outcome === 'resolved' && (
-                          <div className="self-start max-w-[85%] rounded-xl p-3.5 bg-gradient-to-br from-[#1f2c34] to-[#111b21] border border-emerald-500/50 shadow-xl text-left mt-1">
-                            <div className="flex items-center justify-between pb-2 border-b border-emerald-900/50">
+                        {/* Interactive Payment Link Card when PTP Promised or Resolved */}
+                        {(outcome === 'ptp_promised' || outcome === 'resolved') && (
+                          <div className={`self-start max-w-[85%] rounded-xl p-3.5 border shadow-xl text-left mt-1 transition-all ${
+                            outcome === 'resolved'
+                              ? 'bg-gradient-to-br from-[#0c2a20] to-[#081b14] border-emerald-500/70'
+                              : 'bg-gradient-to-br from-[#242114] to-[#16140b] border-amber-500/70'
+                          }`}>
+                            <div className="flex items-center justify-between pb-2 border-b border-slate-700/50">
                               <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+                                <span className={`w-2.5 h-2.5 rounded-full ${outcome === 'resolved' ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`} />
                                 Razorpay Payment Request
                               </span>
-                              <span className="text-[10px] text-emerald-400 font-mono">SECURE-LINK</span>
+                              <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                                outcome === 'resolved' ? 'text-emerald-300 bg-emerald-950/60' : 'text-amber-300 bg-amber-950/60'
+                              }`}>
+                                {outcome === 'resolved' ? 'PAID & CAPTURED' : 'PTP RECORDED'}
+                              </span>
                             </div>
                             <div className="py-2.5">
                               <div className="text-xs text-slate-300">Amount Due:</div>
                               <div className="text-lg font-bold text-white tracking-wide">{formatINR(persona.amount)}</div>
                               <p className="text-[11px] text-slate-400 mt-1">
-                                Pay instantly via UPI (GPay, PhonePe, Paytm) or Saved Cards.
+                                {outcome === 'resolved'
+                                  ? 'Payment verified via webhook (payment.captured). Case marked RESOLVED.'
+                                  : 'Payment link generated. 3 automated reminders scheduled with 24h cooldown.'}
                               </p>
                             </div>
-                            <div className="pt-2 border-t border-emerald-900/40 flex items-center justify-between">
-                              <span className="text-[11px] text-emerald-300 font-medium">Payment Link Generated</span>
-                              <span className="text-xs bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-3 py-1 rounded-lg shadow cursor-pointer">
-                                Pay Now →
+                            <div className="pt-2 border-t border-slate-700/40 flex items-center justify-between gap-2">
+                              <span className="text-[11px] text-slate-300">
+                                {outcome === 'resolved' ? 'Receipt Generated' : 'Status: Awaiting Settlement'}
                               </span>
+                              {outcome === 'ptp_promised' ? (
+                                <button
+                                  onClick={handleCompletePayment}
+                                  disabled={busy}
+                                  className="text-xs bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold px-3 py-1.5 rounded-lg shadow cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center gap-1"
+                                >
+                                  <span>⚡ Click Link & Complete Payment</span>
+                                </button>
+                              ) : (
+                                <span className="text-xs text-emerald-400 font-bold flex items-center gap-1">
+                                  ✓ Paid Successfully
+                                </span>
+                              )}
                             </div>
                           </div>
                         )}
@@ -750,13 +817,32 @@ export const SimulateSession: React.FC<Props> = ({ eventId, isOpen, onClose }) =
               {/* OUTCOME RESOLUTION BANNER */}
               {outcome !== 'ongoing' && (
                 <div className={`p-4 rounded-xl border text-xs animate-fade-in ${OUTCOME_COLOR[outcome]}`}>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-base">
-                      {outcome === 'resolved' ? '✅' : outcome === 'escalated' ? '⚠️' : '🛑'}
-                    </span>
-                    <p className="font-bold text-sm">{OUTCOME_LABEL[outcome]}</p>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">
+                        {outcome === 'resolved' ? '✅' : outcome === 'ptp_promised' ? '🤝' : outcome === 'escalated' ? '⚠️' : '🛑'}
+                      </span>
+                      <p className="font-bold text-sm">{OUTCOME_LABEL[outcome]}</p>
+                    </div>
+                    {outcome === 'ptp_promised' && (
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-900/60 text-amber-200 border border-amber-600/40">
+                        MAX 3 REMINDERS
+                      </span>
+                    )}
                   </div>
                   {reasoning && <p className="text-xs opacity-90 leading-relaxed pl-6">{reasoning}</p>}
+                  {outcome === 'ptp_promised' && (
+                    <div className="mt-3 pl-6">
+                      <button
+                        onClick={handleCompletePayment}
+                        disabled={busy}
+                        className="py-2 px-3.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md transition-all hover:scale-[1.02] active:scale-95 flex items-center gap-2 cursor-pointer"
+                      >
+                        <span>⚡ Simulate Customer Clicking Link & Completing Payment</span>
+                        <span>→</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

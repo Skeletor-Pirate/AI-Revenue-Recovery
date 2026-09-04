@@ -303,8 +303,17 @@ def test_playground_interactive_message_reaches_an_outcome(client):
     assert r.status_code == 200
     body = r.json()
     assert body["turn"]["speaker"] == "agent"
-    assert body["outcome"] in ("ongoing", "resolved", "escalated", "halted")
+    assert body["outcome"] in ("ongoing", "ptp_promised", "resolved", "escalated", "halted")
     assert body["history"][-1] == _speaker_text(body["turn"])
+
+    # Test payment simulation route
+    pay_r = client.post(
+        f"/api/events/{eid}/playground/pay",
+        json={"history": body["history"], "channel": started["channel"]},
+    )
+    assert pay_r.status_code == 200
+    assert pay_r.json()["outcome"] == "resolved"
+    assert "pay_sim_" in pay_r.json()["payment_id"]
 
     assert client.post("/api/events/nope/playground/message",
                        json={"history": [], "message": "hi"}).status_code == 404
