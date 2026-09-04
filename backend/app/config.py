@@ -22,8 +22,21 @@ class Settings(BaseSettings):
     )
     frontend_origin: str = "http://localhost:5173"
 
+    # --- LLM provider (all optional; agents degrade to deterministic behaviour
+    #     when none is set). Auto-detected in this order unless llm_provider is
+    #     set explicitly: anthropic -> openrouter -> openai. See app/llm.py. ---
+    llm_provider: str | None = None            # "anthropic" | "openrouter" | "openai"
+
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-5"
+
+    openrouter_api_key: str | None = None
+    openrouter_model: str = "anthropic/claude-3.7-sonnet"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
 
     razorpay_key_id: str | None = None
     razorpay_key_secret: str | None = None

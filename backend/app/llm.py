@@ -1,0 +1,158 @@
+"""Provider-agnostic LLM client for the Diagnosis and Recovery agents.
+
+Both agents use an LLM only as an *optional* enhancement (Diagnosis: classify a
+free-text failure reason the rules missed; Recovery: draft outreach copy) and
+both degrade to deterministic behaviour when no key is configured. This module
+is the one place that talks to a model provider.
+
+Providers (auto-detected in this order, or forced with ``LLM_PROVIDER``):
+
+* ``anthropic``  — the native ``anthropic`` SDK, model ``ANTHROPIC_MODEL``.
+* ``openrouter`` — OpenAI-compatible REST (``https://openrouter.ai/api/v1``),
+  model ``OPENROUTER_MODEL`` (default a Claude model, keeping the "built on
+  Claude" story). Uses ``httpx`` — no extra SDK.
+* ``openai``     — OpenAI-compatible REST (``https://api.openai.com/v1``),
+  model ``OPENAI_MODEL``.
+
+``chat()`` returns plain text and raises ``LLMUnavailable`` when nothing is
+configured; callers catch that and fall back.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+
+
+class LLMUnavailable(RuntimeError):
+    """No LLM provider is configured (no API key)."""
+
+
+def _get(settings: Any, name: str, default: Any = None) -> Any:
+    return getattr(settings, name, default) if settings is not None else default
+
+
+def resolve_provider(settings: Any) -> str | None:
+    """Which provider to use, or ``None`` if no key is configured."""
+    forced = _get(settings, "llm_provider")
+    if forced:
+        return str(forced).lower()
+    if _get(settings, "anthropic_api_key"):
+        return "anthropic"
+    if _get(settings, "openrouter_api_key"):
+        return "openrouter"
+    if _get(settings, "openai_api_key"):
+        return "openai"
+    return None
+
+
+def available(settings: Any) -> bool:
+    provider = resolve_provider(settings)
+    if provider is None:
+        return False
+    key_field = {
+        "anthropic": "anthropic_api_key",
+        "openrouter": "openrouter_api_key",
+        "openai": "openai_api_key",
+    }.get(provider)
+    return bool(key_field and _get(settings, key_field))
+
+
+def _openai_compatible(
+    *, base_url: str, api_key: str, model: str, system: str | None,
+    user: str, max_tokens: int, extra_headers: dict[str, str] | None = None,
+) -> str:
+    messages: list[dict[str, str]] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": user})
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if extra_headers:
+        headers.update(extra_headers)
+    resp = httpx.post(
+        f"{base_url.rstrip('/')}/chat/completions",
+        headers=headers,
+        json={"model": model, "messages": messages, "max_tokens": max_tokens},
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+def chat(
+    system: str | None, user: str, *, settings: Any, max_tokens: int = 512
+) -> str:
+    """One-shot completion. Returns the model's text. Raises on no provider."""
+    provider = resolve_provider(settings)
+    if provider is None:
+        raise LLMUnavailable("no LLM provider configured")
+
+    if provider == "anthropic":
+        api_key = _get(settings, "anthropic_api_key")
+        if not api_key:
+            raise LLMUnavailable("anthropic selected but no anthropic_api_key")
+        import anthropic  # lazy
+
+        client = anthropic.Anthropic(api_key=api_key)
+        kwargs: dict[str, Any] = {
+            "model": _get(settings, "anthropic_model", "claude-sonnet-5"),
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": user}],
+        }
+        if system:
+            kwargs["system"] = system
+        message = client.messages.create(**kwargs)
+        return "".join(
+            getattr(block, "text", "")
+            for block in message.content
+            if getattr(block, "type", None) == "text"
+        ).strip()
+
+    if provider == "openrouter":
+        api_key = _get(settings, "openrouter_api_key")
+        if not api_key:
+            raise LLMUnavailable("openrouter selected but no openrouter_api_key")
+        return _openai_compatible(
+            base_url=_get(
+                settings, "openrouter_base_url", "https://openrouter.ai/api/v1"
+            ),
+            api_key=api_key,
+            model=_get(
+                settings, "openrouter_model", "anthropic/claude-3.7-sonnet"
+            ),
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+            extra_headers={
+                "HTTP-Referer": "https://github.com/Space-Fighter/AI-Revenue-Recovery",
+                "X-Title": "AI Revenue Recovery",
+            },
+        )
+
+    if provider == "openai":
+        api_key = _get(settings, "openai_api_key")
+        if not api_key:
+            raise LLMUnavailable("openai selected but no openai_api_key")
+        return _openai_compatible(
+            base_url=_get(settings, "openai_base_url", "https://api.openai.com/v1"),
+            api_key=api_key,
+            model=_get(settings, "openai_model", "gpt-4o-mini"),
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+        )
+
+    raise LLMUnavailable(f"unknown LLM provider: {provider!r}")
+
+
+def model_label(settings: Any) -> str:
+    """A short provider/model string for audit payloads."""
+    provider = resolve_provider(settings)
+    if provider == "anthropic":
+        return f"anthropic/{_get(settings, 'anthropic_model', 'claude-sonnet-5')}"
+    if provider == "openrouter":
+        return _get(settings, "openrouter_model", "anthropic/claude-3.7-sonnet")
+    if provider == "openai":
+        return f"openai/{_get(settings, 'openai_model', 'gpt-4o-mini')}"
+    return "none"

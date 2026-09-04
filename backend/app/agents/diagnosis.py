@@ -34,6 +34,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
+from app import llm
 from app.config import get_settings
 from app.db import store
 from app.db.store import MONEY, Agent, EventStatus, RootCause
@@ -232,29 +233,26 @@ def _coerce_root_cause(value: Any) -> RootCause:
 def claude_classify(
     event: Any, settings: Any = None
 ) -> tuple[RootCause, float, str, bool]:
-    """Classify a low-confidence free-text failure via Claude.
+    """Classify a low-confidence free-text failure via the configured LLM.
 
+    Provider-agnostic (see ``app.llm``): Anthropic, OpenRouter or OpenAI.
     Returns ``(root_cause, confidence, reasoning, used_fallback)``. Never raises.
-    No API key or any exception → ``(UNKNOWN, 0.3, <reason>, True)``. Any
-    non-enum / ``suspected_fraud`` answer from Claude is coerced to ``unknown``.
+    No provider or any exception → ``(UNKNOWN, 0.3, <reason>, True)``. Any
+    non-enum / ``suspected_fraud`` answer is coerced to ``unknown``.
     """
     try:
         if settings is None:
             settings = get_settings()
-        api_key = getattr(settings, "anthropic_api_key", None)
-        model = getattr(settings, "anthropic_model", "claude-sonnet-5")
-        if not api_key:
+        if not llm.available(settings):
             return (
                 RootCause.UNKNOWN,
                 0.3,
-                "No Anthropic API key configured; degraded to a best-effort "
+                "No LLM provider configured (set ANTHROPIC_API_KEY, "
+                "OPENROUTER_API_KEY or OPENAI_API_KEY); degraded to a best-effort "
                 "'unknown' classification at low confidence.",
                 True,
             )
 
-        import anthropic  # lazy: tests never reach here
-
-        client = anthropic.Anthropic(api_key=api_key)
         user = (
             f"event_type: {event.event_type}\n"
             f"raw_failure_reason: {event.raw_failure_reason}\n"
@@ -262,17 +260,7 @@ def claude_classify(
             f"attempts_so_far: {event.attempts_so_far}\n"
             f"days_overdue: {getattr(event, 'days_overdue', 0)}"
         )
-        message = client.messages.create(
-            model=model,
-            max_tokens=300,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user}],
-        )
-        text = "".join(
-            getattr(block, "text", "")
-            for block in message.content
-            if getattr(block, "type", None) == "text"
-        )
+        text = llm.chat(_SYSTEM_PROMPT, user, settings=settings, max_tokens=300)
         data = json.loads(_extract_json(text))
         rc = _coerce_root_cause(data.get("root_cause"))
         try:
@@ -387,7 +375,7 @@ def run(session: store.Session, *, settings: Any = None) -> list[str]:
                 payload={
                     "root_cause": rc.value,
                     "confidence": conf,
-                    "model": getattr(settings, "anthropic_model", "claude-sonnet-5"),
+                    "model": llm.model_label(settings),
                     "used_fallback": used_fallback,
                 },
             )

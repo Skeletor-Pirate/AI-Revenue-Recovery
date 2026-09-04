@@ -6,6 +6,24 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — Provider-agnostic LLM (Anthropic / OpenRouter / OpenAI)
+
+- **Did:** New `backend/app/llm.py` — `chat()` / `available()` / `resolve_provider()`
+  / `model_label()`. Providers auto-detected `anthropic → openrouter → openai`
+  (or forced with `LLM_PROVIDER`); OpenRouter + OpenAI over the OpenAI-compatible
+  REST endpoint via `httpx`, Anthropic via its SDK; OpenRouter default model is
+  `anthropic/claude-3.7-sonnet`. `diagnosis.claude_classify` and
+  `recovery._claude_draft` now route through it — same function names (tests
+  still monkeypatch them), same offline fallbacks. `config.py` gained the
+  `openrouter_*` / `openai_*` / `llm_provider` settings; `httpx` moved to runtime
+  deps. `tests/test_llm.py` (+5). **118 backend tests green.**
+- **Why:** the user has an OpenRouter key, not an Anthropic one.
+- **Docs:** `AGENTS_CONTRACT.md` §5; documentation.md §3.2/§3.3/§4/§12;
+  architecture.md tech-stack + decision log; plan.md §12; `.env.example`.
+- **Next:** open the PR (branch pushed; `gh` not installed on this box).
+
+---
+
 ## 2026-09-04 — Phase B + C: built and integrated the four-agent pipeline (steps 3–8)
 
 - **Did:** Five builders (parallel, isolated test DBs) implemented against the

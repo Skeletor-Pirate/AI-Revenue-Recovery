@@ -8,7 +8,7 @@ rationale) and [CLAUDE.md](CLAUDE.md) (the project brief).
 > `architecture.md` to be updated in the same change that adds/alters a file,
 > function, class, endpoint, table, or command.
 
-Last updated: 2026-09-04 — Phase B + C of the agent-team build: all four agent
+Last updated: 2026-09-04 — provider-agnostic LLM client (app/llm.py: Anthropic / OpenRouter / OpenAI). Prior: 2026-09-04 — Phase B + C of the agent-team build: all four agent
 modules built and merged (`detection` / `diagnosis` / `recovery` / `audit`,
 build-order steps 3–6), `app/pipeline.py` chaining them (step 7), `app/api/*`
 routers to the frozen contract mounted in `main.py` (step 8), `fixtures.json`
@@ -109,7 +109,7 @@ RAZORPAY BUILDATHON/
 
 | File | Purpose |
 |---|---|
-| `pyproject.toml` | Project `razorpay-revenue-recovery-backend`, `requires-python >=3.11`. Deps: `anthropic`, `sqlmodel`, `psycopg[binary]`, `razorpay`, `fastapi`, `uvicorn[standard]`, `pydantic-settings`, `pandas`, `python-dotenv`, `faker`. Dev: `pytest`, `httpx`. `[tool.uv] package = false`. `[tool.pytest.ini_options] pythonpath = ["."]` so `import app.*` works from `backend/`. |
+| `pyproject.toml` | Project `razorpay-revenue-recovery-backend`, `requires-python >=3.11`. Deps: `anthropic`, `sqlmodel`, `psycopg[binary]`, `razorpay`, `fastapi`, `uvicorn[standard]`, `pydantic-settings`, `pandas`, `python-dotenv`, `faker`, `httpx` (LLM REST + TestClient). Dev: `pytest`. `[tool.uv] package = false`. `[tool.pytest.ini_options] pythonpath = ["."]` so `import app.*` works from `backend/`. |
 | `uv.lock` | Resolved dependency lockfile (committed). |
 | `.env.example` | Template for `backend/.env`. Keys below. |
 
@@ -120,8 +120,10 @@ RAZORPAY BUILDATHON/
 | `DATABASE_URL` | `postgresql+psycopg://revrec:revrec@localhost:5432/revrec` | `store.get_engine`, `config.Settings` |
 | `TEST_DATABASE_URL` | `…/revrec_test` | `tests/conftest.py` |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | CORS in `main.py` |
-| `ANTHROPIC_API_KEY` | — | Diagnosis / Recovery agents (later) |
-| `ANTHROPIC_MODEL` | `claude-sonnet-5` | same |
+| `LLM_PROVIDER` | auto | force `anthropic` \| `openrouter` \| `openai`; else auto-detect in that order |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — / `claude-sonnet-5` | Diagnosis fallback + Recovery outreach (optional) |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | — / `anthropic/claude-3.7-sonnet` | same, via OpenRouter (OpenAI-compatible) |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | — / `gpt-4o-mini` | same, via OpenAI |
 | `RAZORPAY_KEY_ID` / `_KEY_SECRET` / `_WEBHOOK_SECRET` | — | webhook listener (later) |
 
 ### 3.3 `backend/app/` — application code
@@ -131,6 +133,7 @@ RAZORPAY BUILDATHON/
 | `app/__init__.py` … `app/webhooks/__init__.py` | Package markers. `agents/`, `api/`, `webhooks/` are empty placeholders. | scaffold |
 | `app/main.py` | FastAPI application. See §5. | minimal (health only) |
 | `app/config.py` | `Settings` (pydantic-settings) + cached `get_settings()`. See §4. | done |
+| `app/llm.py` | Provider-agnostic LLM client for Diagnosis + Recovery. `chat(system, user, *, settings, max_tokens)`, `available(settings)`, `resolve_provider(settings)`, `model_label(settings)`, `LLMUnavailable`. Auto-detects `anthropic → openrouter → openai` (or `LLM_PROVIDER`); OpenRouter/OpenAI via OpenAI-compatible REST over `httpx`, Anthropic via its SDK. | **done** |
 | `app/db/store.py` | The shared event store: table models, Pydantic schema models, engine/session helpers, CRUD + audit functions. See §6–§9. | **done, step 1** |
 | `app/data/generate.py` | Deterministic synthetic batch generator incl. fraud cluster. See §10. | **done, step 2** |
 | `app/agents/AGENTS_CONTRACT.md` | Frozen cross-agent contract: per-stage I/O, `RootCause`→intervention map, audit `action` registry, stopping-rule constants, fraud-cluster signature, audit `payload` shapes, Claude-usage rules, API response contract, file boundaries, §10 Phase-B0 Q&A resolutions. | **done** |
@@ -178,7 +181,7 @@ RAZORPAY BUILDATHON/
 
 | Symbol | Kind | Notes |
 |---|---|---|
-| `Settings` | `pydantic_settings.BaseSettings` | `model_config`: `env_file=".env"`, `extra="ignore"`. Fields: `database_url`, `test_database_url`, `frontend_origin`, `anthropic_api_key: str \| None`, `anthropic_model`, `razorpay_key_id/secret/webhook_secret: str \| None`. Each read from the same-named env var (case-insensitive). |
+| `Settings` | `pydantic_settings.BaseSettings` | `model_config`: `env_file=".env"`, `extra="ignore"`. Fields: `database_url`, `test_database_url`, `frontend_origin`; **LLM (all optional):** `llm_provider: str \| None`, `anthropic_api_key`, `anthropic_model`, `openrouter_api_key`, `openrouter_model` (`anthropic/claude-3.7-sonnet`), `openrouter_base_url`, `openai_api_key`, `openai_model` (`gpt-4o-mini`), `openai_base_url`; `razorpay_key_id/secret/webhook_secret: str \| None`. Each read from the same-named env var (case-insensitive). |
 | `get_settings()` | function, `@lru_cache` | Returns the process-wide `Settings` singleton. |
 
 ---
@@ -387,11 +390,12 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 | `test_recovery.py` | 29 | yes | per-intervention routes (7 params), salary-window retry, bank backoff, max-attempts halt, escalation cap (never stage 4), human-approval gate (executed vs not, boundary), cooldown delay, suspected-fraud refusal, never-reads-flagged, template + Claude draft, idempotency |
 | `test_audit.py` | 11 | yes (dedicated `revrec_test_aud`) | totals + money-based overall rate, all-six status keys, by-root-cause enum order, by-intervention `at_risk`/`recovered`, avg hours, complete exception list + all reason-derivation paths, fraud cluster, determinism, one `batch_metrics` row, no event mutation, empty batch |
 | `test_pipeline.py` | 6 | yes | reset→generate→run: every event terminal, fraud cluster `flagged` + not recovered, metrics over full batch, exception list populated with reasons, rerunnable/stable, `batch_metrics` row written |
+| `test_llm.py` | 5 | no | provider auto-detect priority (anthropic→openrouter→openai), explicit `LLM_PROVIDER` override, `available()` / `model_label()`, `LLMUnavailable` when no key |
 
-Current run against the local Postgres: **113 passed** (`uv run pytest -q` from
+Current run against the local Postgres: **118 passed** (`uv run pytest -q` from
 `backend/`; run in chunks on low-RAM boxes — the full suite plus the
 batch-reseeding pipeline tests can OOM a single process). With Postgres
-stopped: ~15 passed, the rest skipped.
+stopped: ~20 passed, the rest skipped.
 
 ---
 

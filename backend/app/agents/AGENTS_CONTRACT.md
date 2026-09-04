@@ -107,16 +107,21 @@ deterministic per-event rule (see §7), not randomness, so the demo is stable.
 
 ## 5. Claude usage
 
-- Diagnosis: `anthropic` SDK, model `get_settings().anthropic_model`. Call
-  **only** when rules confidence ≤ 0.5 and `raw_failure_reason` is non-null
-  free-text. System prompt: classify into the `RootCause` enum; return JSON
-  `{"root_cause": <member>, "confidence": <0..1>, "reasoning": <str>}`. On no
-  API key / any exception → fall back to `root_cause="unknown"`, confidence
-  `0.3`, reasoning notes the fallback. Never raises.
-- Recovery: Claude drafts outreach copy only. Plain business English, mirror
+- **Provider-agnostic** via `app/llm.py` — `llm.chat(system, user, *, settings)`
+  and `llm.available(settings)`. Providers auto-detected in order
+  `anthropic → openrouter → openai` (or forced with `LLM_PROVIDER`). OpenRouter
+  and OpenAI use the OpenAI-compatible REST endpoint over `httpx`; Anthropic
+  uses its native SDK. OpenRouter's default model is a Claude model.
+- Diagnosis: call **only** when rules confidence ≤ 0.5 and `raw_failure_reason`
+  is non-null free-text. System prompt: classify into the `RootCause` enum;
+  return JSON `{"root_cause": <member>, "confidence": <0..1>, "reasoning": <str>}`.
+  On no provider / any exception → fall back to `root_cause="unknown"`,
+  confidence `0.3`, reasoning notes the fallback. Never raises. The
+  `llm_classified_root_cause` payload `model` key = `llm.model_label(settings)`.
+- Recovery: the LLM drafts outreach copy only. Plain business English, mirror
   Razorpay's Agent Studio tone (e.g. "Hi, I noticed you left … would you like a
-  payment link?"). No ML jargon. Template fallback per intervention when no API
-  key. The drafted text goes in the audit `payload`, key `message`.
+  payment link?"). No ML jargon. Template fallback per intervention when no
+  provider. The drafted text goes in the audit `payload`, key `message`.
 - Both degrade silently to deterministic behaviour so tests pass offline.
 
 ---

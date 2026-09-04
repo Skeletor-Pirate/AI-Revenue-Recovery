@@ -341,6 +341,12 @@ This project is being built *for* Razorpay, evaluated *by* Razorpay engineers, o
   fraud-cluster signature can keep its "tight time clustering" (≤ 60 min)
   clause. `insert_event` honours a supplied `created_at` (and matches
   `updated_at` to it).
+- **Provider-agnostic LLM (2026-09-04):** §4 pins the `anthropic` SDK. The LLM
+  is now behind `app/llm.py`, which also supports **OpenRouter** and **OpenAI**
+  (OpenAI-compatible REST). Auto-detects `anthropic → openrouter → openai`;
+  OpenRouter's default model is a Claude model, so the "built on Claude" framing
+  holds. Both call-sites (Diagnosis free-text fallback, Recovery outreach) still
+  degrade to deterministic behaviour with no key. Added `httpx` to runtime deps.
 - **Deterministic recovery outcome (2026-09-04):** whether a recovery attempt
   succeeds is decided by `sha256(event_id) % 100 < p` against a per-intervention
   success rate, not an RNG — repeatable demo + tests. `AGENTS_CONTRACT.md` §7.

@@ -45,6 +45,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from app import llm
 from app.db import store
 from app.db.store import Agent, EventStatus, MONEY
 
@@ -172,15 +173,12 @@ def _template_outreach(intervention: str, event: Any) -> str:
 
 
 def _claude_draft(intervention: str, event: Any, *, settings: Any) -> str:
-    """Draft outreach copy with Claude. Isolated so tests can monkeypatch it.
+    """Draft outreach copy with the configured LLM (Anthropic / OpenRouter /
+    OpenAI — see ``app.llm``). Isolated so tests can monkeypatch it.
 
     Mirrors Razorpay Agent Studio's plain business English: re-engage the
     customer with a personalized nudge, no ML jargon, first person, warm.
     """
-    import anthropic  # imported lazily; never needed in tests
-
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-    model = getattr(settings, "anthropic_model", "claude-sonnet-5")
     prompt = (
         "Write one short, friendly customer message (2-3 sentences, plain "
         "business English, first person, no jargon) to re-engage a customer "
@@ -191,23 +189,17 @@ def _claude_draft(intervention: str, event: Any, *, settings: Any) -> str:
         f"customer={getattr(event, 'customer_id', 'customer')}. "
         'Start with "Hi <customer>,". Return only the message text.'
     )
-    resp = client.messages.create(
-        model=model,
-        max_tokens=256,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return resp.content[0].text.strip()
+    return llm.chat(None, prompt, settings=settings, max_tokens=256).strip()
 
 
 def draft_outreach(intervention: str, event: Any, *, settings: Any = None) -> str:
     """Return outreach copy for *intervention*. Never raises.
 
-    Uses Claude (via ``_claude_draft``) only when ``settings.anthropic_api_key``
-    is set; otherwise (and on any Claude error) falls back to the deterministic
-    template so tests pass offline.
+    Uses the configured LLM (via ``_claude_draft``) only when a provider key is
+    set; otherwise (and on any error) falls back to the deterministic template
+    so tests and offline runs work.
     """
-    key = getattr(settings, "anthropic_api_key", None) if settings is not None else None
-    if key:
+    if settings is not None and llm.available(settings):
         try:
             text = _claude_draft(intervention, event, settings=settings)
             if text and text.strip():

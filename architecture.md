@@ -8,12 +8,14 @@ Diagrams and design rationale. Companion to
 > the same change that alters the architecture, data model, agent flow, or
 > runtime topology.
 
-Last updated: 2026-09-04 — Phase B + C of the agent-team build (plan.md §9
-steps 3–8): all four agents built + merged, `app/pipeline.py` chains them,
-`app/api/*` routers mounted in `main.py`, React dashboard built. Pipeline nodes
-recoloured `done`. Prior: 2026-09-03 — Phase A (RootCause vocabulary,
-cross-agent + API contract frozen). Prior: 2026-08-28 — step 2 (synthetic data
-generator); datastore switched from Docker to a local PostgreSQL process.
+Last updated: 2026-09-04 — provider-agnostic LLM client (`app/llm.py`: Anthropic
+/ OpenRouter / OpenAI, auto-detected). Prior: 2026-09-04 — Phase B + C of the
+agent-team build (plan.md §9 steps 3–8): all four agents built + merged,
+`app/pipeline.py` chains them, `app/api/*` routers mounted in `main.py`, React
+dashboard built, pipeline nodes recoloured `done`. Prior: 2026-09-03 — Phase A
+(RootCause vocabulary, cross-agent + API contract frozen). Prior: 2026-08-28 —
+step 2 (synthetic data generator); datastore switched from Docker to a local
+PostgreSQL process.
 
 ---
 
@@ -175,7 +177,7 @@ sequenceDiagram
     participant PIPE as pipeline.py
     participant STORE as store.py
     participant PG as Postgres
-    participant LLM as Claude (Anthropic)
+    participant LLM as LLM (app/llm.py — Claude by default)
 
     UI->>API: POST /api/pipeline/run
     API->>PIPE: run(batch)
@@ -232,6 +234,7 @@ sequenceDiagram
 | Parallel build isolation | each backend builder ran its tests against a dedicated DB (`revrec_test_diag` / `_rec` / `_aud`); merge + CI use `revrec_test` | five agents built in parallel without the per-test `reset_db` stomping each other |
 | Audit entry points | `compute_metrics(session) -> dict` (pure, returned by pipeline + API) split from `run() -> list[str]` (writes the `batch_metrics` row) | keeps the uniform agent `run` signature while letting callers get the metrics without a write |
 | Dashboard glass | `GlassCard` = frosted `backdrop-blur`, not the full liquid-glass refraction lib | meaning never rides on the effect; the lib can be layered in later with no API change |
+| LLM provider | one `app/llm.py` client, provider auto-detected (`anthropic → openrouter → openai`); OpenRouter default model is still Claude | use whichever key is available without losing the "built on Claude" framing; both agent call-sites stay tiny and offline-safe |
 | Root-cause vocabulary | `RootCause` `StrEnum` in `store.py` (9 members), one Recovery intervention each | keeps Diagnosis output and Recovery routing in lockstep; DB column stays `str \| None` (no migration), enum enforced at the schema layer (`EventUpdate`) |
 | Cross-agent coupling | frozen `AGENTS_CONTRACT.md` (I/O table, `action` registry, stopping-rule constants, fraud signature, `payload` shapes) | agents are sequential at runtime but independent at build time — a contract lets the four modules be built in parallel by separate agents |
 | Recovery outcome | deterministic per `hash(event_id)` vs a per-intervention success rate | stable, repeatable demo + tests; no RNG in the pipeline |
@@ -249,7 +252,7 @@ sequenceDiagram
 | DB driver | psycopg 3 (`postgresql+psycopg://`) |
 | Database | PostgreSQL 17 — local process (`scripts/pg.ps1`); `docker-compose.yml` kept for Docker-capable machines |
 | Data / synthetic | pandas · Faker |
-| LLM | Anthropic Claude (`anthropic` SDK) — Diagnosis & Recovery, later |
+| LLM | Provider-agnostic via `app/llm.py` — Anthropic (SDK), OpenRouter or OpenAI (OpenAI-compatible REST over `httpx`); auto-detected, Diagnosis fallback + Recovery outreach, all optional |
 | Payments | `razorpay` SDK — **test mode only**, later |
 | Backend tooling | uv · pytest · httpx |
 | Frontend | React 19 · Vite · TypeScript · Tailwind CSS v4 · Recharts |

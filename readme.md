@@ -118,8 +118,11 @@ npm run dev                                      # :5173 — renders the bundled
 # live data: set VITE_DATA_SOURCE=live in frontend/.env, with the backend running
 ```
 
-`ANTHROPIC_API_KEY` is optional — Diagnosis falls back to `unknown` and Recovery
-uses plain-English templates when it is absent, so everything runs offline.
+**The LLM is optional.** Set `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` **or**
+`OPENAI_API_KEY` (auto-detected in that order; `app/llm.py`) to enable the
+Diagnosis free-text fallback and Claude-drafted outreach copy. With no key,
+Diagnosis falls back to `unknown` and Recovery uses plain-English templates —
+everything runs offline. OpenRouter's default model is a Claude model.
 
 ### Example output (`uv run python -m app.pipeline`, seed 42)
 
@@ -155,7 +158,7 @@ exception list (40 — honest, not cherry-picked): …
   RTO-by-pincode scoring.
 - **Faster tests** — transaction-rollback fixtures instead of `reset_db` per test;
   a 12-event integration batch.
-- **Live LLM demo** — a recorded run with `ANTHROPIC_API_KEY` set so the Claude
+- **Live LLM demo** — a recorded run with an LLM key set so the free-text
   fallback classification and drafted outreach copy are visible.
 - **The liquid-glass refraction layer** on the dashboard chrome (currently a
   frosted `backdrop-blur` fallback).
