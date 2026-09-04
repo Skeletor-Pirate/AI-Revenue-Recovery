@@ -103,6 +103,7 @@ RAZORPAY BUILDATHON/
 | `.gitignore` | Ignores `__pycache__`, `.venv`, `.pytest_cache`, `.env`, `node_modules`, `frontend/dist`, `**/data/synthetic_events.csv`. |
 | `.claude/skills/` | Claude Code project skills (dev tooling, not shipped): `build-workflow` (mandatory per-task workflow wrapper: check out/update plan.md → verify against Razorpay sources (link list + how-to embedded in its Step 1) → keep architecture.md diagrams current → documentation.md → history.md brief; absorbed the former `razorpay-source-check` skill), `scroll-craft` + `liquid-glass` (vendored UI skills), `glass-scroll-3d` (composite scroll+R3F+glass, for the welcome page), `frontend` (one skill, four modes — `scroll-craft` + `liquid-glass` vendored UI guides, `glass-scroll-3d` composite scroll+R3F+glass for the welcome page, `revrec-dashboard` dashboard UI: tokens + chart catalog + data-table/timeline components, combines dataviz + liquid-glass; each mode is a `GUIDE.md` under `.claude/skills/frontend/<mode>/`). |
 | `plan.md` | The project brief (formerly `CLAUDE.md`; renamed). `CLAUDE.md` is now a short operational guide pointing here. |
+| `readme.md` | **The submission README** (build-order step 10): the-bar mapping, root-cause→intervention table, the fraud-cluster demo moment, run instructions + example output, and the "what broke / what we'd do next" writeup. |
 
 ### 3.2 `backend/` — packaging & config
 
@@ -406,8 +407,8 @@ stopped: ~15 passed, the rest skipped.
 | 6 | `agents/audit.py` (metrics) | ✅ done (11 tests) |
 | 7 | `pipeline.py` (single entrypoint) | ✅ done (`app/pipeline.py` + 6 integration tests) |
 | 8 | dashboard | 🟡 built against fixtures (`frontend/src/pages/*`), + `app/api/*` live; browser end-to-end pass pending |
-| 9 | `webhooks/listener.py` | ⬜ (stretch) |
-| 10 | `README.md` + `architecture.md` "what broke" | 🟡 architecture.md started |
+| 9 | `webhooks/listener.py` | ⬜ stretch — not built |
+| 10 | `readme.md` (submission README + "what broke") + `architecture.md` | ✅ done |
 
 **Deviations from CLAUDE.md** (approved by the owner): Postgres instead of
 SQLite; `uv` instead of `pip`/`requirements.txt`; a FastAPI + React monorepo

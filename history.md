@@ -35,8 +35,14 @@ reference lives in [documentation.md](documentation.md) and
   honest exception list + stopping rules + audit trail all present).
 - **Docs:** documentation.md §3/§5/§5.1/§12/§13 + runbook; architecture.md §2
   (nodes → done), §7, §8 decision log; plan.md §9 status + §12; this entry.
-- **Next:** step 9 (Razorpay webhook listener, stretch), step 10 (README +
-  "what broke" writeup), a browser end-to-end pass of the dashboard on live API.
+- **Then (same session):** step 10 done — rewrote `readme.md` as the submission
+  README (the-bar mapping, root-cause→intervention table, fraud-cluster demo
+  moment, run instructions + example output, "what broke / what we'd do next").
+  Committed steps 3–8 as six logical commits on `feat/four-agent-pipeline`.
+  API-level end-to-end verified (all four endpoints return correct live pipeline
+  data through the Vite proxy); browser DOM pass still owed.
+- **Next:** step 9 (Razorpay webhook listener, stretch); browser DOM pass of the
+  dashboard on the live API; pitch video.
 
 ---
 
