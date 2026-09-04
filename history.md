@@ -6,6 +6,32 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — Razorpay test-mode webhook listener (build-order step 9)
+
+- **Did:** `app/webhooks/listener.py` + `POST /webhooks/razorpay` (mounted in
+  `main.py`). `verify_signature()` — HMAC-SHA256 over the raw body keyed by
+  `RAZORPAY_WEBHOOK_SECRET`, constant-time (per
+  razorpay.com/docs/webhooks/validate-test). `razorpay_event_to_eventcreate()`
+  maps `payment.failed` → `failed_payment`, `payment_link.expired` →
+  `abandoned_checkout`, `invoice.expired` → `overdue_invoice`,
+  `subscription.halted`/`.pending` → `expired_mandate`/`failed_payment`;
+  paise→₹; real `cust_...` ids kept, emails/phones hashed (no PII); success /
+  unknown / zero-amount → ignored. Signed at-risk event → `insert_event` as
+  `detected` + one `ingested_webhook_event` audit row; the existing pipeline
+  runs on it unchanged. Idempotent (dedup by event id — Razorpay retries).
+  `test_webhooks.py` (12). **146 backend tests green.**
+- **Verified:** Razorpay webhooks docs — `X-Razorpay-Signature` header,
+  HMAC-SHA256 of the raw body; top-level payload fields (`entity`, `event`,
+  `contains`, `payload`, `created_at`); `payment.failed` / `payment.captured` /
+  `order.paid` event names. Amounts in paise (Razorpay convention).
+- **Docs:** plan.md §9 (all steps done) + §12; AGENTS_CONTRACT.md §3
+  (`ingested_webhook_event`); architecture.md (event sources, `WH` node → done,
+  component table); documentation.md (file ref, endpoint, test inventory,
+  runbook, build status); readme.md; this entry.
+- **Next:** pitch video; optional browser pass of the RAG + webhook flow.
+
+---
+
 ## 2026-09-04 — RAG knowledge base (pgvector + HNSW) for the Diagnosis Agent
 
 - **Did:**

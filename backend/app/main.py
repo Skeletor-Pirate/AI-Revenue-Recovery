@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import router as api_router
 from app.config import get_settings
 from app.db import store
+from app.webhooks import router as webhooks_router
 
 settings = get_settings()
 
@@ -41,3 +42,4 @@ def health() -> dict[str, str]:
 
 
 app.include_router(api_router)
+app.include_router(webhooks_router)

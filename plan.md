@@ -327,9 +327,11 @@ This project is being built *for* Razorpay, evaluated *by* Razorpay engineers, o
 - **Also done (2026-09-04):** multi-provider LLM client (`app/llm.py` —
   Anthropic / OpenRouter / OpenAI); RAG knowledge base (`app/rag.py`, pgvector
   HNSW) wired into Diagnosis + a "similar past cases" dashboard panel; Postgres
-  moved to the `pgvector/pgvector` Docker container. 134 backend tests green.
-- **Next:** step 9 (Razorpay test-mode webhook listener, stretch); browser
-  end-to-end pass of the RAG panel on live API; pitch video.
+  moved to the `pgvector/pgvector` Docker container; **step 9** — Razorpay
+  test-mode webhook listener (`app/webhooks/listener.py`, `POST
+  /webhooks/razorpay`, HMAC-SHA256 verified). 146 backend tests green.
+- **§9 build order: steps 1–10 all done.** Only remaining work is the pitch
+  video and an optional browser pass of the new dashboard panels on live API.
 - **Failure-code correction (2026-09-03):** §5 / §7 name `raw_failure_reason`
   values illustratively. Verified against
   `razorpay.com/docs/payments/payments/test-card-details`, the generator now

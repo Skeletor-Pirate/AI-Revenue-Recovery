@@ -8,7 +8,10 @@ Diagrams and design rationale. Companion to
 > the same change that alters the architecture, data model, agent flow, or
 > runtime topology.
 
-Last updated: 2026-09-04 — RAG knowledge base (`app/rag.py`: pgvector
+Last updated: 2026-09-04 — Razorpay test-mode webhook listener
+(`app/webhooks/listener.py`, `POST /webhooks/razorpay`) as a second event
+source into Detection; pipeline diagram node `WH` → done. Prior: 2026-09-04 —
+RAG knowledge base (`app/rag.py`: pgvector
 `resolved_cases` + HNSW, wired into Diagnosis; embeddings via `app/llm.embed`);
 Postgres moved to the `pgvector/pgvector` Docker container (Docker + WSL2 work
 here — the earlier note was wrong). Prior: 2026-09-04 — provider-agnostic LLM
@@ -42,11 +45,11 @@ metrics, and an honest exception list.
 flowchart TD
     subgraph sources [Event sources]
         SYN[Synthetic batch<br/>app/data/generate.py]
-        WH[Razorpay test-mode<br/>webhooks — stretch]
+        WH[Razorpay test-mode webhooks<br/>app/webhooks/listener.py]
     end
 
     SYN --> DET
-    WH -.-> DET
+    WH --> DET
 
     subgraph agents [Agent pipeline]
         DET[Detection Agent<br/>flag at-risk revenue]
@@ -77,9 +80,14 @@ flowchart TD
 
     classDef done fill:#d3f9d8,stroke:#2b8a3e;
     classDef todo fill:#fff3bf,stroke:#e67700;
-    class SYN,STORE,DET,DIA,REC,AUD,API,UI,RAG,LLM done;
-    class WH todo;
+    class SYN,STORE,DET,DIA,REC,AUD,API,UI,RAG,LLM,WH done;
 ```
+
+Both event sources feed the same store: the synthetic generator seeds a batch;
+`app/webhooks/listener.py` ingests **signed Razorpay test-mode** webhook
+deliveries (`payment.failed`, `payment_link.expired`, `invoice.expired`,
+`subscription.halted`) as `detected` events. The pipeline is source-agnostic —
+it only ever reads `status` from the store.
 
 Dashed = optional/degrading edges: the LLM and the RAG knowledge base are used
 when configured and are no-ops otherwise (Diagnosis falls back to its rules
@@ -256,7 +264,7 @@ sequenceDiagram
 | Pipeline | `app/pipeline.py` ✅ | chains agents 3–6 into one run; returns the MetricsBlock | argparse CLI + printed summary |
 | API | `app/main.py`, `app/api/*` ✅ | REST over store + pipeline (`/api/events`, `/api/events/{id}/audit`, `/api/metrics`, `/api/pipeline/run`) | CORS to frontend only |
 | Dashboard | `frontend/src/pages/*` ✅ (fixtures; live via `VITE_DATA_SOURCE`) | at-risk queue, decision trail, charts, exception list, fraud-cluster alert | mirrors Razorpay's plain-English tone |
-| Webhook listener | `app/webhooks/listener.py` (stretch) | ingest Razorpay test-mode events into Detection | signature-verified |
+| Webhook listener | `app/webhooks/listener.py` ✅ | ingest Razorpay **test-mode** webhook deliveries as `detected` events | HMAC-SHA256 signature verified over the raw body; idempotent (dedup by event id); success/unknown events acknowledged but ignored; amounts paise→₹; no PII stored (emails/phones hashed) |
 
 ---
 

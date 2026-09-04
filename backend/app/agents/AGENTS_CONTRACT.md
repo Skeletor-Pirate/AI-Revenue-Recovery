@@ -70,6 +70,7 @@ Audit aggregates on these; a typo silently breaks a metric.
 |---|---|---|
 | detection | `flagged_at_risk` | event confirmed genuinely at-risk, left `detected` |
 | detection | `routed_to_exception` | obvious non-recoverable diverted |
+| detection | `ingested_webhook_event` | written by `app/webhooks/listener.py` when a Razorpay test-mode webhook creates an event; the event enters as `detected` and the Detection Agent triages it on the next run |
 | diagnosis | `classified_root_cause` | rules classifier decided |
 | diagnosis | `llm_classified_root_cause` | Claude fallback decided |
 | diagnosis / triage | `halted_fraud_cluster` | member of a fraud-signature cluster → `flagged` (agent=`triage`) |

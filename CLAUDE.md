@@ -64,9 +64,10 @@ event sources ─▶ Detection ─▶ Diagnosis ─▶ Recovery ─▶ Audit/Rep
   generator is deterministic per `seed`; `raw_failure_reason` values are **real
   Razorpay error codes**, not invented.
 
-Current build position: steps 1–8 done (four agents, `pipeline.py`, `app/api/*`,
-React dashboard) + a multi-provider LLM client and a pgvector RAG knowledge base.
-See `documentation.md` §13.
+Current build position: `plan.md` §9 **steps 1–10 done** — four agents,
+`pipeline.py`, `app/api/*`, React dashboard, a multi-provider LLM client, a
+pgvector RAG knowledge base, and the Razorpay test-mode webhook listener
+(`app/webhooks/listener.py`). Remaining: pitch video. See `documentation.md` §13.
 
 ## Commands
 

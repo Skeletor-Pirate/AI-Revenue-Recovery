@@ -8,7 +8,10 @@ rationale) and [CLAUDE.md](CLAUDE.md) (the project brief).
 > `architecture.md` to be updated in the same change that adds/alters a file,
 > function, class, endpoint, table, or command.
 
-Last updated: 2026-09-04 — RAG knowledge base: `app/rag.py` (pgvector
+Last updated: 2026-09-04 — Razorpay test-mode webhook listener (build-order
+step 9): `app/webhooks/listener.py`, `POST /webhooks/razorpay` (HMAC-SHA256
+signature check → `EventCreate` → same pipeline), 12 tests. 146 backend tests.
+Prior: 2026-09-04 — RAG knowledge base: `app/rag.py` (pgvector
 `resolved_cases` table + HNSW index) wired into the Diagnosis Agent's free-text
 fallback; `app/llm.embed()` (OpenAI or local `fastembed`); `GET
 /api/events/{id}/similar`; "Similar past cases" dashboard panel; Postgres moved
@@ -154,6 +157,7 @@ RAZORPAY BUILDATHON/
 | `app/agents/recovery.py` | Recovery Agent. `run()`, `draft_outreach(intervention, event, *, settings)`, `_stable_hash(event_id)`; constants `MAX_RETRY_ATTEMPTS=3`, `MAX_ESCALATION_STAGE=3`, `COOLDOWN_HOURS=24`, `HUMAN_APPROVAL_THRESHOLD_INR=Decimal("5000")`, `SUCCESS_RATES`, `HOURS_TO_RECOVERY`, `INTERVENTIONS`. Reads `diagnosed` only. Deterministic recovered/exception; human-approval gate logs + does not execute; escalation never past stage 3. Details: `AGENTS_CONTRACT.md` §4/§7/§10. | **done, step 5** |
 | `app/agents/audit.py` | Audit Agent. `compute_metrics(session) -> dict` (the MetricsBlock — pure read, what the API returns) + `run(session, *, settings=None) -> list[str]` (writes one `batch_metrics` row on the earliest event). Full-batch metrics + complete honest exception list. Details: `AGENTS_CONTRACT.md` §7/§8. | **done, step 6** |
 | `app/pipeline.py` | `run(database_url=None, *, settings=None) -> dict` chains Detection→Diagnosis→Recovery→Audit over the seeded batch and returns the MetricsBlock; argparse CLI (`--reset`, `--count`, `--seed`, `--json`) with a printed summary. | **done, step 7** |
+| `app/webhooks/__init__.py`, `app/webhooks/listener.py` | Razorpay **test-mode** webhook listener (`POST /webhooks/razorpay`), mounted in `main.py`. `verify_signature(body, signature, secret)` (HMAC-SHA256, constant-time), `razorpay_event_to_eventcreate(event)` (maps `payment.failed` / `payment_link.expired` / `invoice.expired` / `subscription.halted` → `EventCreate`; success/unknown → `None`), `AT_RISK_EVENTS`, `SUCCESS_EVENTS`. Signed → inserts a `detected` event + one `ingested_webhook_event` audit row; the pipeline then runs on it unchanged. Idempotent (dedup by event id). | **done, step 9** |
 | `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/events/{id}/similar`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
 
 ### 3.4 `backend/tests/`
@@ -218,6 +222,7 @@ RAZORPAY BUILDATHON/
 | GET | `/api/events/{event_id}/similar` | `routes.event_similar` | `{event_id, similar: SimilarCase[]}` — RAG nearest cases; `[]` when KB/embeddings off; 404 if unknown | **done** |
 | POST | `/api/pipeline/run` | `routes.pipeline_run` | `{metrics: MetricsBlock, ran_at: str}` — query params `reset`, `count`, `seed` | **done** |
 | GET | `/api/metrics` | `routes.get_metrics` | `MetricsBlock` (computed from current DB state) | **done** |
+| POST | `/webhooks/razorpay` | `listener.razorpay_webhook` | 503 no secret · 401 bad signature · 200 `{status: accepted\|ignored, …}` | **done, step 9** |
 
 `main.py` mounts `app.api.router` (prefix `/api`). `EventRead` / `AuditRead`
 serialise money as decimal strings (matches `fixtures.json`).
@@ -403,6 +408,7 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 | Seed synthetic batch | `uv run python -m app.data.generate --reset` | `backend/` |
 | Run the full pipeline | `uv run python -m app.pipeline --reset` (add `--json` for the raw MetricsBlock) | `backend/` |
 | Run API (dev) | `uv run uvicorn app.main:app --reload` → `:8000/docs` | `backend/` |
+| Ingest live Razorpay test-mode webhooks | set `RAZORPAY_WEBHOOK_SECRET` in `.env`; expose `:8000` (e.g. `ngrok http 8000`); register `<url>/webhooks/razorpay` in the Razorpay **test-mode** dashboard | `backend/` |
 | Dashboard against live API | set `VITE_DATA_SOURCE=live` in `frontend/.env`, run backend + `npm run dev` | `frontend/` |
 | Run tests | `uv run pytest -q` | `backend/` |
 | Install frontend deps | `npm install` | `frontend/` |
@@ -425,12 +431,13 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 | `test_pipeline.py` | 6 | yes | reset→generate→run: every event terminal, fraud cluster `flagged` + not recovered, metrics over full batch, exception list populated with reasons, rerunnable/stable, `batch_metrics` row written |
 | `test_rag.py` | 10 | yes (needs pgvector) | vector extension present, degrade path when embeddings off, reference-case seeding idempotent, retrieve filtered by type + sorted, add/nearest round-trip, dedup-on-insert, skip unknown/low-confidence/fraud, bucket-cap trims oldest, `RevRecEmbeddings` wrapper, Diagnosis feeds RAG context into the LLM prompt |
 | `test_api.py` | 6 | yes (needs pgvector) | one module-scoped real pipeline run; `/health`, `/api/events`, `/api/events/{id}/audit` + 404, `MetricsBlock` shape, `POST /api/pipeline/run`, `/api/events/{id}/similar` + 404 |
+| `test_webhooks.py` | 12 | 5 need Postgres | `verify_signature` roundtrip/tamper; `razorpay_event_to_eventcreate` per event type + paise→₹ + non-PII customer key + success/unknown/zero → `None`; endpoint: signed `payment.failed` inserts a `detected` event + `ingested_webhook_event` row, 401 bad signature, 503 no secret, ignores success events, idempotent on redelivery |
 | `test_llm.py` | 5 | no | provider auto-detect priority (anthropic→openrouter→openai), explicit `LLM_PROVIDER` override, `available()` / `model_label()`, `LLMUnavailable` when no key |
 
-Current run against the pgvector container: **134 passed** (`uv run pytest -q`
+Current run against the pgvector container: **146 passed** (`uv run pytest -q`
 from `backend/`; run in chunks on low-RAM boxes — the batch-reseeding pipeline
 tests can OOM a single process). `test_rag.py` / `test_api.py` need pgvector.
-With Postgres stopped: ~20 passed, the rest skipped.
+With Postgres stopped: ~30 passed, the rest skipped.
 
 ---
 
@@ -447,7 +454,7 @@ With Postgres stopped: ~20 passed, the rest skipped.
 | 7 | `pipeline.py` (single entrypoint) | ✅ done (`app/pipeline.py` + 6 integration tests) |
 | 8 | dashboard | ✅ built + browser-verified on live API; RAG "Similar past cases" panel added |
 | — | multi-provider LLM (`app/llm.py`) + **RAG knowledge base** (`app/rag.py`, pgvector HNSW) wired into Diagnosis | ✅ done (not a numbered step; plan.md §12) |
-| 9 | `webhooks/listener.py` | ⬜ stretch — not built |
+| 9 | `webhooks/listener.py` | ✅ done (`app/webhooks/listener.py`, `POST /webhooks/razorpay`, 12 tests) — signed test-mode Razorpay events → `EventCreate` → same pipeline |
 | 10 | `readme.md` (submission README + "what broke") + `architecture.md` | ✅ done |
 
 **Deviations from CLAUDE.md** (approved by the owner): Postgres instead of

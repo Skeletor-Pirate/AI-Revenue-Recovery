@@ -79,6 +79,20 @@ The dashboard surfaces this as a red alert card on `/exceptions`.
 
 ---
 
+## Event sources
+
+The pipeline is source-agnostic — it only reads `status` from the store. Two
+sources feed it:
+
+- **Synthetic batch** (`app/data/generate.py`) — a deterministic 74-event batch
+  (real Razorpay failure codes) plus the seeded fraud cluster. The demo default.
+- **Razorpay test-mode webhooks** (`app/webhooks/listener.py`, `POST
+  /webhooks/razorpay`) — signed `payment.failed` / `payment_link.expired` /
+  `invoice.expired` / `subscription.halted` deliveries are HMAC-SHA256-verified,
+  mapped to an `EventCreate`, and inserted as `detected`. Set
+  `RAZORPAY_WEBHOOK_SECRET`, expose `:8000` (e.g. `ngrok http 8000`), register
+  the URL in the Razorpay **test-mode** dashboard. Idempotent; no PII stored.
+
 ## Architecture
 
 ```
@@ -183,9 +197,6 @@ exception list (40 — honest, not cherry-picked): …
 
 ## What we'd do next
 
-- **Real Razorpay test-mode webhooks** (`payment.failed`, `subscription.charged`)
-  into Detection, replacing pure synthetic replay — the pipeline is already
-  source-agnostic.
 - **Partial recovery** — today an attempt recovers the full amount or nothing.
 - **Pincode / segment risk** in the exception list, echoing Razorpay Sprint 2026's
   RTO-by-pincode scoring.
