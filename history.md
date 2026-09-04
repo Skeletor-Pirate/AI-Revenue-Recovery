@@ -6,6 +6,16 @@ reference lives in [documentation.md](documentation.md) and
 
 ---
 
+## 2026-09-04 — Promise-to-Pay (PTP) State Machine Enforcement & Simulated Payment Webhook
+
+- **Did:**
+  - **Fintech PTP Integrity:** Fixed premature case resolution in Simulate/Playground. In line with Razorpay standards, when a customer verbally agrees to pay, commits to a date, or requests a payment link, funds have not yet settled. Marked outcome as `ptp_promised` instead of `resolved`, scheduling up to 3 automated reminders with a 24h cooldown before human escalation.
+  - **Real Payment Capture Gate:** Status only transitions to `resolved` when money is captured. Added `simulate_payment()` in `backend/app/agents/playground.py` and `POST /api/events/{event_id}/playground/pay` in `backend/app/api/routes.py` to simulate the customer clicking the link and completing payment (Razorpay `payment.captured` webhook).
+  - **Frontend UI & Audio Polish:** Updated `SimulateSession.tsx` with dedicated PTP interactive banners and WhatsApp Payment Link cards in both Call and Message modes. Added action button: `⚡ Customer Clicks Link & Completes Payment (Simulate Webhook)` which transitions state to `resolved` and generates a verifiable Razorpay Transaction ID (`pay_sim_...`). Added `isCustomerSpeaking` state and audio avatar indicators so Customer AI voice playback is clearly indicated in the UI.
+  - **Tests & Build:** Verified with 26 playground unit tests, updated `test_api.py`, frontend type check and production build (`npm run build`). All green.
+
+---
+
 ## 2026-09-04 — Simulate / Playground + Sarvam TTS fix + synthetic contact data
 
 - **Did:** Added `app/agents/playground.py` — a stateless, sandboxed rehearsal
