@@ -3,6 +3,7 @@
 
 import type {
   EventAuditResponse,
+  EventSimilarResponse,
   EventsResponse,
   MetricsBlock,
   PipelineRunResponse,
@@ -27,6 +28,8 @@ export const api = {
   listEvents: () => request<EventsResponse>('/api/events'),
   getAuditTrail: (id: string) =>
     request<EventAuditResponse>(`/api/events/${encodeURIComponent(id)}/audit`),
+  getSimilar: (id: string) =>
+    request<EventSimilarResponse>(`/api/events/${encodeURIComponent(id)}/similar`),
   getMetrics: () => request<MetricsBlock>('/api/metrics'),
   runPipeline: () =>
     request<PipelineRunResponse>('/api/pipeline/run', { method: 'POST' }),

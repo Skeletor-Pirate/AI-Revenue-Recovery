@@ -6,6 +6,7 @@ import {
   labelRootCause,
 } from '../api/actionLabels'
 import { formatDateTime, formatINRPrecise, formatPct } from '../lib/format'
+import { SimilarCases } from './SimilarCases'
 import { AuditTimeline } from './AuditTimeline'
 import { StatusPill } from './StatusPill'
 import { Skeleton, ErrorState } from './Feedback'
@@ -106,6 +107,7 @@ export function DetailDrawer({
               Every agent decision
             </h3>
             <AuditTimeline trail={state.data.trail} />
+            <SimilarCases caseId={caseId} />
           </>
         )}
       </div>

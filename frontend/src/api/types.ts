@@ -59,6 +59,21 @@ export interface EventAuditResponse {
   trail: AuditRead[]
 }
 
+export interface SimilarCase {
+  event_id: string
+  event_type: string
+  raw_failure_reason: string | null
+  case_text: string
+  root_cause: RootCause
+  source: string // "pipeline" | "reference"
+  similarity: number // cosine similarity 0..1
+}
+
+export interface EventSimilarResponse {
+  event_id: string
+  similar: SimilarCase[]
+}
+
 export interface ByRootCause {
   root_cause: RootCause
   at_risk: string

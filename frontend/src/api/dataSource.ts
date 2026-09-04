@@ -9,6 +9,7 @@ import fixturesJson from './fixtures.json'
 import { api } from './client'
 import type {
   EventAuditResponse,
+  EventSimilarResponse,
   EventsResponse,
   MetricsBlock,
   PipelineRunResponse,
@@ -20,6 +21,7 @@ export const IS_LIVE = SOURCE === 'live' || SOURCE === 'api'
 interface FixturesShape {
   events: EventsResponse
   eventAudit: EventAuditResponse
+  eventSimilar: EventSimilarResponse
   pipelineRun: PipelineRunResponse
   metrics: MetricsBlock
 }
@@ -52,6 +54,13 @@ export const dataSource = {
     const events = fx.events.events
     const event = events.find((e) => e.event_id === id) ?? canned.event
     return settle({ event, trail: [] })
+  },
+
+  async getSimilar(id: string): Promise<EventSimilarResponse> {
+    if (IS_LIVE) return api.getSimilar(id)
+    // fixture ships one sample; other events get an honest empty list
+    if (fx.eventSimilar?.event_id === id) return settle(fx.eventSimilar)
+    return settle({ event_id: id, similar: [] })
   },
 
   async runPipeline(): Promise<PipelineRunResponse> {
