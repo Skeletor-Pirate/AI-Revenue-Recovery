@@ -1,35 +1,28 @@
-import { useEffect, useState } from 'react'
-import { api } from './api/client'
+import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { AppShell } from './components/AppShell'
+import { Overview } from './pages/Overview'
+import { Queue } from './pages/Queue'
+import { Recovery } from './pages/Recovery'
+import { Exceptions } from './pages/Exceptions'
+
+function CaseRedirect() {
+  const { id } = useParams()
+  return <Navigate to={`/queue?case=${encodeURIComponent(id ?? '')}`} replace />
+}
 
 export default function App() {
-  const [health, setHealth] = useState<string>('checking…')
-
-  useEffect(() => {
-    api
-      .health()
-      .then((r) => setHealth(r.status))
-      .catch((e) => setHealth(`error: ${e.message}`))
-  }, [])
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-4">
-          <h1 className="text-lg font-semibold">AI Revenue Recovery</h1>
-          <p className="text-sm text-slate-500">
-            Detect revenue at risk → diagnose root cause → run a bounded recovery
-            workflow
-          </p>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <p className="text-sm">
-          backend health:{' '}
-          <span className="font-mono font-medium">{health}</span>
-        </p>
-        {/* pages land here: at-risk queue, per-case decision trail, metrics, exceptions */}
-      </main>
-    </div>
+    <BrowserRouter>
+      <AppShell>
+        <Routes>
+          <Route path="/" element={<Overview />} />
+          <Route path="/queue" element={<Queue />} />
+          <Route path="/recovery" element={<Recovery />} />
+          <Route path="/exceptions" element={<Exceptions />} />
+          <Route path="/case/:id" element={<CaseRedirect />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AppShell>
+    </BrowserRouter>
   )
 }

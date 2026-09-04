@@ -1,1 +1,92 @@
 @import "tailwindcss";
+
+/* =============================================================================
+   revrec-dashboard design tokens — merged from
+   .claude/skills/frontend/revrec-dashboard/references/tokens.css
+   Single source of colour for the dashboard. No raw hex in components.
+   ============================================================================= */
+
+@theme {
+  --color-plane:        #f9f9f7;
+  --color-surface-1:    #fcfcfb;
+  --color-surface-2:    #f2f2ef;
+  --color-ink:          #0b0b0b;
+  --color-ink-soft:     #52514e;
+  --color-ink-muted:    #898781;
+  --color-hairline:     #e1e0d9;
+  --color-ring:         rgba(11,11,11,0.10);
+
+  --color-series-1:     #2a78d6;
+  --color-series-2:     #eb6834;
+  --color-series-3:     #1baf7a;
+  --color-series-4:     #eda100;
+  --color-series-5:     #e87ba4;
+  --color-series-6:     #008300;
+  --color-series-7:     #4a3aa7;
+  --color-series-8:     #e34948;
+
+  --color-status-good:      #0ca30c;
+  --color-status-warning:   #fab219;
+  --color-status-serious:   #ec835a;
+  --color-status-critical:  #d03b3b;
+
+  --color-delta-up:     #006300;
+
+  --color-seq-100: #cde2fb; --color-seq-200: #9ec5f4; --color-seq-300: #6da7ec;
+  --color-seq-400: #3987e5; --color-seq-500: #256abf; --color-seq-600: #184f95;
+  --color-seq-700: #0d366b;
+
+  --glass-tint-from:  rgba(255,255,255,0.72);
+  --glass-tint-to:    rgba(255,255,255,0.42);
+  --glass-radius:     20px;
+}
+
+.viz-root {
+  color-scheme: light;
+  --surface-1: var(--color-surface-1);
+  --text-primary: var(--color-ink);
+  --text-secondary: var(--color-ink-soft);
+  --text-muted: var(--color-ink-muted);
+  --gridline: var(--color-hairline);
+  --baseline: #c3c2b7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    --color-plane:     #0d0d0d;
+    --color-surface-1: #1a1a19;
+    --color-surface-2: #232321;
+    --color-ink:       #ffffff;
+    --color-ink-soft:  #c3c2b7;
+    --color-ink-muted: #898781;
+    --color-hairline:  #2c2c2a;
+    --color-ring:      rgba(255,255,255,0.10);
+    --color-series-1: #3987e5; --color-series-2: #d95926; --color-series-3: #199e70;
+    --color-series-4: #c98500; --color-series-5: #d55181; --color-series-6: #008300;
+    --color-series-7: #9085e9; --color-series-8: #e66767;
+    --color-delta-up: #0ca30c;
+    --glass-tint-from: rgba(30,30,32,0.72);
+    --glass-tint-to:   rgba(30,30,32,0.42);
+  }
+  :root:where(:not([data-theme="light"])) .viz-root { color-scheme: dark; --baseline: #383835; }
+}
+:root[data-theme="dark"] {
+  --color-plane:     #0d0d0d;
+  --color-surface-1: #1a1a19;
+  --color-surface-2: #232321;
+  --color-ink:       #ffffff;
+  --color-ink-soft:  #c3c2b7;
+  --color-ink-muted: #898781;
+  --color-hairline:  #2c2c2a;
+  --color-ring:      rgba(255,255,255,0.10);
+  --color-series-1: #3987e5; --color-series-2: #d95926; --color-series-3: #199e70;
+  --color-series-4: #c98500; --color-series-5: #d55181; --color-series-6: #008300;
+  --color-series-7: #9085e9; --color-series-8: #e66767;
+  --color-delta-up: #0ca30c;
+  --glass-tint-from: rgba(30,30,32,0.72);
+  --glass-tint-to:   rgba(30,30,32,0.42);
+}
+:root[data-theme="dark"] .viz-root { color-scheme: dark; --baseline: #383835; }
+
+body { background: var(--color-plane); color: var(--color-ink); }
+.tabnum { font-variant-numeric: tabular-nums; }

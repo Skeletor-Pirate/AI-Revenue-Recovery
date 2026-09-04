@@ -1,6 +1,13 @@
 // Typed fetch wrapper around the FastAPI backend.
 // In dev, Vite proxies /api and /health to http://localhost:8000 (vite.config.ts).
 
+import type {
+  EventAuditResponse,
+  EventsResponse,
+  MetricsBlock,
+  PipelineRunResponse,
+} from './types'
+
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -17,8 +24,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string }>('/health'),
-  // endpoints land here as the backend routers are built:
-  // listEvents: () => request<EventOut[]>('/api/events'),
-  // runPipeline: () => request<PipelineResult>('/api/pipeline/run', { method: 'POST' }),
-  // metrics: () => request<Metrics>('/api/metrics'),
+  listEvents: () => request<EventsResponse>('/api/events'),
+  getAuditTrail: (id: string) =>
+    request<EventAuditResponse>(`/api/events/${encodeURIComponent(id)}/audit`),
+  getMetrics: () => request<MetricsBlock>('/api/metrics'),
+  runPipeline: () =>
+    request<PipelineRunResponse>('/api/pipeline/run', { method: 'POST' }),
 }

@@ -1,0 +1,2121 @@
+{
+  "_note": "Regenerated from a real `uv run python -m app.pipeline` run (seed 42) in Phase C. Shapes match AGENTS_CONTRACT.md \u00a78. Money = decimal strings.",
+  "events": {
+    "count": 74,
+    "events": [
+      {
+        "event_id": "evt_045",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_325772",
+        "amount": "820.14",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-21T21:48:23.749722+05:30",
+        "updated_at": "2026-09-04T07:45:09.699164+05:30",
+        "status": "recovered",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "820.14"
+      },
+      {
+        "event_id": "evt_006",
+        "event_type": "failed_payment",
+        "customer_id": "cust_334053",
+        "amount": "905.78",
+        "currency": "INR",
+        "raw_failure_reason": "payment_timed_out",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-08-21T23:08:56.737351+05:30",
+        "updated_at": "2026-09-04T07:45:10.059031+05:30",
+        "status": "recovered",
+        "root_cause": "auth_failure",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "905.78"
+      },
+      {
+        "event_id": "evt_030",
+        "event_type": "failed_payment",
+        "customer_id": "cust_539898",
+        "amount": "274.59",
+        "currency": "INR",
+        "raw_failure_reason": "payment_timed_out",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-08-22T09:04:53.123859+05:30",
+        "updated_at": "2026-09-04T07:45:10.431207+05:30",
+        "status": "exception",
+        "root_cause": "auth_failure",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_027",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_781453",
+        "amount": "1360.10",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-22T16:19:15.075772+05:30",
+        "updated_at": "2026-09-04T07:45:10.816495+05:30",
+        "status": "recovered",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "1360.10"
+      },
+      {
+        "event_id": "evt_048",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_207175",
+        "amount": "200.00",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 90,
+        "created_at": "2026-08-22T20:04:20.032578+05:30",
+        "updated_at": "2026-09-04T07:45:11.206278+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_051",
+        "event_type": "failed_payment",
+        "customer_id": "cust_201414",
+        "amount": "4325.30",
+        "currency": "INR",
+        "raw_failure_reason": "card_number_invalid",
+        "attempts_so_far": 3,
+        "days_overdue": 0,
+        "created_at": "2026-08-22T22:30:24.945920+05:30",
+        "updated_at": "2026-09-04T07:45:11.574999+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "4325.30"
+      },
+      {
+        "event_id": "evt_062",
+        "event_type": "failed_payment",
+        "customer_id": "cust_230889",
+        "amount": "568.24",
+        "currency": "INR",
+        "raw_failure_reason": "payment_timed_out",
+        "attempts_so_far": 3,
+        "days_overdue": 0,
+        "created_at": "2026-08-23T00:31:42.924460+05:30",
+        "updated_at": "2026-09-04T07:45:11.982926+05:30",
+        "status": "exception",
+        "root_cause": "auth_failure",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_041",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_543143",
+        "amount": "1831.58",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_expired",
+        "attempts_so_far": 3,
+        "days_overdue": 0,
+        "created_at": "2026-08-23T04:52:26.094851+05:30",
+        "updated_at": "2026-09-04T07:45:12.381073+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "1831.58"
+      },
+      {
+        "event_id": "evt_061",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_662275",
+        "amount": "7092.97",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 29,
+        "created_at": "2026-08-23T18:51:00.093073+05:30",
+        "updated_at": "2026-09-04T07:45:12.398372+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_047",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_452944",
+        "amount": "1082.52",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 4,
+        "created_at": "2026-08-23T20:01:02.221352+05:30",
+        "updated_at": "2026-09-04T07:45:12.813845+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_029",
+        "event_type": "failed_payment",
+        "customer_id": "cust_671412",
+        "amount": "1426.19",
+        "currency": "INR",
+        "raw_failure_reason": "card_expired",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-23T23:39:44.258531+05:30",
+        "updated_at": "2026-09-04T07:45:13.180637+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "1426.19"
+      },
+      {
+        "event_id": "evt_056",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_377370",
+        "amount": "5022.54",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-24T06:22:24.538515+05:30",
+        "updated_at": "2026-09-04T07:45:13.559056+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_039",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_267414",
+        "amount": "1287.97",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_expired",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-24T07:22:19.018999+05:30",
+        "updated_at": "2026-09-04T07:45:13.948116+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "1287.97"
+      },
+      {
+        "event_id": "evt_057",
+        "event_type": "failed_payment",
+        "customer_id": "cust_946335",
+        "amount": "1076.05",
+        "currency": "INR",
+        "raw_failure_reason": "gateway_technical_error",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-24T07:33:20.777517+05:30",
+        "updated_at": "2026-09-04T07:45:14.344485+05:30",
+        "status": "exception",
+        "root_cause": "bank_downtime",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_001",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_216739",
+        "amount": "1649.94",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-24T09:12:52.057203+05:30",
+        "updated_at": "2026-09-04T07:45:14.730567+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_020",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_343962",
+        "amount": "1831.50",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_failed",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-24T16:41:05.841105+05:30",
+        "updated_at": "2026-09-04T07:45:15.093306+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "1831.50"
+      },
+      {
+        "event_id": "evt_000",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_770487",
+        "amount": "3704.59",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-08-24T18:02:08.749242+05:30",
+        "updated_at": "2026-09-04T07:45:15.455841+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_008",
+        "event_type": "failed_payment",
+        "customer_id": "cust_872246",
+        "amount": "2004.77",
+        "currency": "INR",
+        "raw_failure_reason": "card_number_invalid",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-25T01:27:23.936432+05:30",
+        "updated_at": "2026-09-04T07:45:15.835936+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "2004.77"
+      },
+      {
+        "event_id": "evt_005",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_356787",
+        "amount": "9264.20",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_failed",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-25T10:15:36.012071+05:30",
+        "updated_at": "2026-09-04T07:45:16.212561+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "9264.20"
+      },
+      {
+        "event_id": "evt_037",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_895667",
+        "amount": "1078.82",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_expired",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-25T17:19:04.363319+05:30",
+        "updated_at": "2026-09-04T07:45:16.574352+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "1078.82"
+      },
+      {
+        "event_id": "evt_066",
+        "event_type": "failed_payment",
+        "customer_id": "cust_407419",
+        "amount": "682.79",
+        "currency": "INR",
+        "raw_failure_reason": "card_declined",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-26T00:35:48.743178+05:30",
+        "updated_at": "2026-09-04T07:45:16.588047+05:30",
+        "status": "exception",
+        "root_cause": "card_declined",
+        "diagnosis_confidence": 0.8,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_016",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_133326",
+        "amount": "1120.21",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-08-26T02:03:03.815059+05:30",
+        "updated_at": "2026-09-04T07:45:16.960341+05:30",
+        "status": "recovered",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "1120.21"
+      },
+      {
+        "event_id": "evt_023",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_127824",
+        "amount": "5038.42",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 84,
+        "created_at": "2026-08-26T13:13:17.002740+05:30",
+        "updated_at": "2026-09-04T07:45:16.969777+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_007",
+        "event_type": "failed_payment",
+        "customer_id": "cust_246316",
+        "amount": "1060.38",
+        "currency": "INR",
+        "raw_failure_reason": "payment_timed_out",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-08-26T15:28:28.244688+05:30",
+        "updated_at": "2026-09-04T07:45:17.414973+05:30",
+        "status": "recovered",
+        "root_cause": "auth_failure",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "1060.38"
+      },
+      {
+        "event_id": "evt_060",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_581741",
+        "amount": "1364.09",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_expired",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-08-26T16:46:07.917039+05:30",
+        "updated_at": "2026-09-04T07:45:17.823661+05:30",
+        "status": "exception",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_069",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_748564",
+        "amount": "2043.42",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-26T18:47:15.412379+05:30",
+        "updated_at": "2026-09-04T07:45:18.174670+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_067",
+        "event_type": "failed_payment",
+        "customer_id": "cust_969693",
+        "amount": "1830.99",
+        "currency": "INR",
+        "raw_failure_reason": "payment_timed_out",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-27T00:42:19.760430+05:30",
+        "updated_at": "2026-09-04T07:45:18.543412+05:30",
+        "status": "exception",
+        "root_cause": "auth_failure",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_036",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_106814",
+        "amount": "2144.61",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-27T04:36:42.020471+05:30",
+        "updated_at": "2026-09-04T07:45:18.901476+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_043",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_391369",
+        "amount": "5185.04",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_expired",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-27T06:04:24.817374+05:30",
+        "updated_at": "2026-09-04T07:45:19.281043+05:30",
+        "status": "exception",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_044",
+        "event_type": "failed_payment",
+        "customer_id": "cust_263032",
+        "amount": "2503.80",
+        "currency": "INR",
+        "raw_failure_reason": "gateway_technical_error",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-27T07:27:17.660080+05:30",
+        "updated_at": "2026-09-04T07:45:19.656654+05:30",
+        "status": "recovered",
+        "root_cause": "bank_downtime",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "2503.80"
+      },
+      {
+        "event_id": "evt_019",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_329258",
+        "amount": "638.59",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-28T03:55:25.027313+05:30",
+        "updated_at": "2026-09-04T07:45:20.057891+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_011",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_876646",
+        "amount": "8630.09",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_failed",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-28T07:29:37.694363+05:30",
+        "updated_at": "2026-09-04T07:45:20.441286+05:30",
+        "status": "recovered",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "8630.09"
+      },
+      {
+        "event_id": "evt_054",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_460663",
+        "amount": "2398.06",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 39,
+        "created_at": "2026-08-28T10:08:42.943762+05:30",
+        "updated_at": "2026-09-04T07:45:20.826499+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_035",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_948749",
+        "amount": "200.00",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-28T10:22:56.912844+05:30",
+        "updated_at": "2026-09-04T07:45:21.188716+05:30",
+        "status": "recovered",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "200.00"
+      },
+      {
+        "event_id": "evt_058",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_145561",
+        "amount": "2227.74",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 37,
+        "created_at": "2026-08-28T12:56:38.314074+05:30",
+        "updated_at": "2026-09-04T07:45:21.540665+05:30",
+        "status": "recovered",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "2227.74"
+      },
+      {
+        "event_id": "evt_065",
+        "event_type": "failed_payment",
+        "customer_id": "cust_678856",
+        "amount": "2142.60",
+        "currency": "INR",
+        "raw_failure_reason": "card_declined",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-08-28T14:54:31.816478+05:30",
+        "updated_at": "2026-09-04T07:45:21.561258+05:30",
+        "status": "exception",
+        "root_cause": "card_declined",
+        "diagnosis_confidence": 0.8,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_040",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_832052",
+        "amount": "2927.49",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 84,
+        "created_at": "2026-08-28T17:28:34.224653+05:30",
+        "updated_at": "2026-09-04T07:45:21.932953+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_034",
+        "event_type": "failed_payment",
+        "customer_id": "cust_391704",
+        "amount": "2455.49",
+        "currency": "INR",
+        "raw_failure_reason": "insufficient_fund",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-28T21:55:46.878463+05:30",
+        "updated_at": "2026-09-04T07:45:21.959223+05:30",
+        "status": "exception",
+        "root_cause": "insufficient_funds",
+        "diagnosis_confidence": 0.95,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_012",
+        "event_type": "failed_payment",
+        "customer_id": "cust_671858",
+        "amount": "677.34",
+        "currency": "INR",
+        "raw_failure_reason": "authentication_failed",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-29T04:22:18.457965+05:30",
+        "updated_at": "2026-09-04T07:45:22.322265+05:30",
+        "status": "recovered",
+        "root_cause": "auth_failure",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "677.34"
+      },
+      {
+        "event_id": "evt_024",
+        "event_type": "failed_payment",
+        "customer_id": "cust_688508",
+        "amount": "958.75",
+        "currency": "INR",
+        "raw_failure_reason": "card_expired",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-29T13:25:25.788727+05:30",
+        "updated_at": "2026-09-04T07:45:22.694136+05:30",
+        "status": "exception",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_002",
+        "event_type": "failed_payment",
+        "customer_id": "cust_126225",
+        "amount": "7818.30",
+        "currency": "INR",
+        "raw_failure_reason": "bank_not_available",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-29T13:44:43.334097+05:30",
+        "updated_at": "2026-09-04T07:45:23.080787+05:30",
+        "status": "recovered",
+        "root_cause": "bank_downtime",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "7818.30"
+      },
+      {
+        "event_id": "evt_022",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_731262",
+        "amount": "5830.29",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-29T19:34:03.565468+05:30",
+        "updated_at": "2026-09-04T07:45:23.573065+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_042",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_456778",
+        "amount": "802.34",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-30T04:51:21.797948+05:30",
+        "updated_at": "2026-09-04T07:45:23.969800+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_033",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_717889",
+        "amount": "1594.95",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 72,
+        "created_at": "2026-08-30T14:08:27.101817+05:30",
+        "updated_at": "2026-09-04T07:45:24.858405+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_064",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_182627",
+        "amount": "1551.87",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-08-31T17:37:13.185717+05:30",
+        "updated_at": "2026-09-04T07:45:25.243044+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_038",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_944962",
+        "amount": "483.80",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-31T20:22:42.852905+05:30",
+        "updated_at": "2026-09-04T07:45:25.629564+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_017",
+        "event_type": "failed_payment",
+        "customer_id": "cust_131244",
+        "amount": "1657.84",
+        "currency": "INR",
+        "raw_failure_reason": "card_declined",
+        "attempts_so_far": 3,
+        "days_overdue": 0,
+        "created_at": "2026-08-31T23:46:17.038854+05:30",
+        "updated_at": "2026-09-04T07:45:25.645653+05:30",
+        "status": "exception",
+        "root_cause": "card_declined",
+        "diagnosis_confidence": 0.8,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_018",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_198246",
+        "amount": "2153.07",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-08-31T23:57:20.626652+05:30",
+        "updated_at": "2026-09-04T07:45:25.996020+05:30",
+        "status": "recovered",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "2153.07"
+      },
+      {
+        "event_id": "evt_003",
+        "event_type": "failed_payment",
+        "customer_id": "cust_877572",
+        "amount": "607.59",
+        "currency": "INR",
+        "raw_failure_reason": "authentication_failed",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-09-01T00:17:10.061327+05:30",
+        "updated_at": "2026-09-04T07:45:26.418071+05:30",
+        "status": "exception",
+        "root_cause": "auth_failure",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_021",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_629903",
+        "amount": "548.15",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 3,
+        "days_overdue": 69,
+        "created_at": "2026-09-01T01:04:20.888571+05:30",
+        "updated_at": "2026-09-04T07:45:26.781566+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_068",
+        "event_type": "failed_payment",
+        "customer_id": "cust_759176",
+        "amount": "6536.33",
+        "currency": "INR",
+        "raw_failure_reason": "bank_not_available",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-09-01T02:24:12.529073+05:30",
+        "updated_at": "2026-09-04T07:45:27.170630+05:30",
+        "status": "exception",
+        "root_cause": "bank_downtime",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_052",
+        "event_type": "failed_payment",
+        "customer_id": "cust_476417",
+        "amount": "1331.89",
+        "currency": "INR",
+        "raw_failure_reason": "bank_not_available",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-09-01T07:59:31.087236+05:30",
+        "updated_at": "2026-09-04T07:45:27.547849+05:30",
+        "status": "exception",
+        "root_cause": "bank_downtime",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "fraud_03",
+        "event_type": "failed_payment",
+        "customer_id": "cust_899732",
+        "amount": "5003.06",
+        "currency": "INR",
+        "raw_failure_reason": "card_declined",
+        "attempts_so_far": 3,
+        "days_overdue": 0,
+        "created_at": "2026-09-01T08:00:53.009859+05:30",
+        "updated_at": "2026-09-04T07:45:07.981618+05:30",
+        "status": "flagged",
+        "root_cause": "suspected_fraud",
+        "diagnosis_confidence": null,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "fraud_01",
+        "event_type": "failed_payment",
+        "customer_id": "cust_399981",
+        "amount": "4994.80",
+        "currency": "INR",
+        "raw_failure_reason": "card_declined",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-09-01T08:03:15.219033+05:30",
+        "updated_at": "2026-09-04T07:45:07.986339+05:30",
+        "status": "flagged",
+        "root_cause": "suspected_fraud",
+        "diagnosis_confidence": null,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "fraud_02",
+        "event_type": "failed_payment",
+        "customer_id": "cust_830044",
+        "amount": "4999.93",
+        "currency": "INR",
+        "raw_failure_reason": "card_declined",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-09-01T08:05:41.353377+05:30",
+        "updated_at": "2026-09-04T07:45:07.989214+05:30",
+        "status": "flagged",
+        "root_cause": "suspected_fraud",
+        "diagnosis_confidence": null,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "fraud_00",
+        "event_type": "failed_payment",
+        "customer_id": "cust_140424",
+        "amount": "4981.54",
+        "currency": "INR",
+        "raw_failure_reason": "card_declined",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-09-01T08:23:30.140124+05:30",
+        "updated_at": "2026-09-04T07:45:07.995757+05:30",
+        "status": "flagged",
+        "root_cause": "suspected_fraud",
+        "diagnosis_confidence": null,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_014",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_719176",
+        "amount": "1438.94",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 21,
+        "created_at": "2026-09-01T09:53:26.762014+05:30",
+        "updated_at": "2026-09-04T07:45:27.907914+05:30",
+        "status": "recovered",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "1438.94"
+      },
+      {
+        "event_id": "evt_010",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_809570",
+        "amount": "1389.34",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 5,
+        "created_at": "2026-09-01T14:14:50.963494+05:30",
+        "updated_at": "2026-09-04T07:45:28.283123+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_059",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_865179",
+        "amount": "3502.41",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 29,
+        "created_at": "2026-09-01T14:45:26.040160+05:30",
+        "updated_at": "2026-09-04T07:45:28.670768+05:30",
+        "status": "exception",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_004",
+        "event_type": "failed_payment",
+        "customer_id": "cust_388389",
+        "amount": "3515.07",
+        "currency": "INR",
+        "raw_failure_reason": "card_number_invalid",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-09-01T14:56:49.922234+05:30",
+        "updated_at": "2026-09-04T07:45:29.053115+05:30",
+        "status": "exception",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_049",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_197251",
+        "amount": "464.82",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-09-02T12:30:59.907061+05:30",
+        "updated_at": "2026-09-04T07:45:29.473868+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_026",
+        "event_type": "failed_payment",
+        "customer_id": "cust_850800",
+        "amount": "1911.11",
+        "currency": "INR",
+        "raw_failure_reason": "authentication_failed",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-09-02T16:13:58.130571+05:30",
+        "updated_at": "2026-09-04T07:45:29.834479+05:30",
+        "status": "recovered",
+        "root_cause": "auth_failure",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "1911.11"
+      },
+      {
+        "event_id": "evt_063",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_496922",
+        "amount": "3039.90",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 3,
+        "days_overdue": 0,
+        "created_at": "2026-09-02T19:16:16.362741+05:30",
+        "updated_at": "2026-09-04T07:45:30.248434+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_032",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_571029",
+        "amount": "200.00",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-09-02T22:58:22.453003+05:30",
+        "updated_at": "2026-09-04T07:45:30.617399+05:30",
+        "status": "recovered",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "200.00"
+      },
+      {
+        "event_id": "evt_025",
+        "event_type": "failed_payment",
+        "customer_id": "cust_308496",
+        "amount": "482.02",
+        "currency": "INR",
+        "raw_failure_reason": "insufficient_fund",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-09-02T23:58:23.610613+05:30",
+        "updated_at": "2026-09-04T07:45:30.637536+05:30",
+        "status": "exception",
+        "root_cause": "insufficient_funds",
+        "diagnosis_confidence": 0.95,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_031",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_331148",
+        "amount": "3120.59",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 3,
+        "days_overdue": 0,
+        "created_at": "2026-09-03T07:00:41.065528+05:30",
+        "updated_at": "2026-09-04T07:45:31.030665+05:30",
+        "status": "recovered",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "3120.59"
+      },
+      {
+        "event_id": "evt_055",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_733052",
+        "amount": "2111.46",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 86,
+        "created_at": "2026-09-03T11:42:51.458996+05:30",
+        "updated_at": "2026-09-04T07:45:31.397405+05:30",
+        "status": "recovered",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "2111.46"
+      },
+      {
+        "event_id": "evt_053",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_988662",
+        "amount": "9172.32",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 9,
+        "created_at": "2026-09-03T14:34:26.141112+05:30",
+        "updated_at": "2026-09-04T07:45:31.802046+05:30",
+        "status": "recovered",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "9172.32"
+      },
+      {
+        "event_id": "evt_050",
+        "event_type": "failed_payment",
+        "customer_id": "cust_498382",
+        "amount": "631.94",
+        "currency": "INR",
+        "raw_failure_reason": "card_declined",
+        "attempts_so_far": 2,
+        "days_overdue": 0,
+        "created_at": "2026-09-03T20:37:36.623138+05:30",
+        "updated_at": "2026-09-04T07:45:31.814946+05:30",
+        "status": "recovered",
+        "root_cause": "card_declined",
+        "diagnosis_confidence": 0.8,
+        "recovered_amount": "631.94"
+      },
+      {
+        "event_id": "evt_015",
+        "event_type": "failed_payment",
+        "customer_id": "cust_542417",
+        "amount": "4772.80",
+        "currency": "INR",
+        "raw_failure_reason": "gateway_technical_error",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-09-03T22:02:03.968442+05:30",
+        "updated_at": "2026-09-04T07:45:32.202549+05:30",
+        "status": "recovered",
+        "root_cause": "bank_downtime",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "4772.80"
+      },
+      {
+        "event_id": "evt_046",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_900581",
+        "amount": "1006.93",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 2,
+        "days_overdue": 53,
+        "created_at": "2026-09-03T22:57:40.825463+05:30",
+        "updated_at": "2026-09-04T07:45:32.547926+05:30",
+        "status": "recovered",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "1006.93"
+      },
+      {
+        "event_id": "evt_028",
+        "event_type": "abandoned_checkout",
+        "customer_id": "cust_835392",
+        "amount": "579.45",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-09-04T02:25:53.802549+05:30",
+        "updated_at": "2026-09-04T07:45:32.938445+05:30",
+        "status": "exception",
+        "root_cause": "checkout_abandoned",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "0.00"
+      },
+      {
+        "event_id": "evt_009",
+        "event_type": "overdue_invoice",
+        "customer_id": "cust_207473",
+        "amount": "2664.79",
+        "currency": "INR",
+        "raw_failure_reason": null,
+        "attempts_so_far": 1,
+        "days_overdue": 35,
+        "created_at": "2026-09-04T04:13:55.007811+05:30",
+        "updated_at": "2026-09-04T07:45:33.321486+05:30",
+        "status": "recovered",
+        "root_cause": "invoice_forgotten",
+        "diagnosis_confidence": 0.85,
+        "recovered_amount": "2664.79"
+      },
+      {
+        "event_id": "evt_013",
+        "event_type": "expired_mandate",
+        "customer_id": "cust_191161",
+        "amount": "543.20",
+        "currency": "INR",
+        "raw_failure_reason": "mandate_creation_failed",
+        "attempts_so_far": 1,
+        "days_overdue": 0,
+        "created_at": "2026-09-04T06:51:12.823937+05:30",
+        "updated_at": "2026-09-04T07:45:33.694726+05:30",
+        "status": "exception",
+        "root_cause": "expired_instrument",
+        "diagnosis_confidence": 0.9,
+        "recovered_amount": "0.00"
+      }
+    ]
+  },
+  "eventAudit": {
+    "event": {
+      "event_id": "evt_006",
+      "event_type": "failed_payment",
+      "customer_id": "cust_334053",
+      "amount": "905.78",
+      "currency": "INR",
+      "raw_failure_reason": "payment_timed_out",
+      "attempts_so_far": 2,
+      "days_overdue": 0,
+      "created_at": "2026-08-21T23:08:56.737351+05:30",
+      "updated_at": "2026-09-04T07:45:10.059031+05:30",
+      "status": "recovered",
+      "root_cause": "auth_failure",
+      "diagnosis_confidence": 0.9,
+      "recovered_amount": "905.78"
+    },
+    "trail": [
+      {
+        "id": 2,
+        "event_id": "evt_006",
+        "agent": "detection",
+        "action": "flagged_at_risk",
+        "reasoning": "Confirmed failed_payment for customer cust_334053 as at-risk revenue of 905.78 INR; leaving it detected for the Diagnosis Agent.",
+        "payload": {
+          "event_type": "failed_payment",
+          "amount_at_risk": "905.78"
+        },
+        "timestamp": "2026-09-04T07:45:07.811950+05:30"
+      },
+      {
+        "id": 80,
+        "event_id": "evt_006",
+        "agent": "diagnosis",
+        "action": "classified_root_cause",
+        "reasoning": "Razorpay gateway reason 'payment_timed_out' maps to auth_failure via the rules classifier (confidence 0.9).",
+        "payload": {
+          "confidence": 0.9,
+          "root_cause": "auth_failure",
+          "matched_reason": "payment_timed_out"
+        },
+        "timestamp": "2026-09-04T07:45:08.003934+05:30"
+      },
+      {
+        "id": 152,
+        "event_id": "evt_006",
+        "agent": "recovery",
+        "action": "intervention_selected",
+        "reasoning": "Routed auth_failure for customer cust_334053 to the prompted_guided_retry intervention.",
+        "payload": {
+          "root_cause": "auth_failure",
+          "intervention": "prompted_guided_retry"
+        },
+        "timestamp": "2026-09-04T07:45:09.705674+05:30"
+      },
+      {
+        "id": 153,
+        "event_id": "evt_006",
+        "agent": "recovery",
+        "action": "prompted_guided_retry",
+        "reasoning": "Sent prompted_guided_retry outreach to customer cust_334053 (contact at 2026-09-04T07:45:08.003934+05:30, root cause: auth_failure).",
+        "payload": {
+          "channel": "sms",
+          "message": "Hi cust_334053, your last payment did not clear the verification step. Let's try again - here is a fresh link and we'll guide you through it.",
+          "contact_at": "2026-09-04T07:45:08.003934+05:30"
+        },
+        "timestamp": "2026-09-04T07:45:10.051028+05:30"
+      },
+      {
+        "id": 154,
+        "event_id": "evt_006",
+        "agent": "recovery",
+        "action": "marked_recovered",
+        "reasoning": "Recovered 905.78 for customer cust_334053 via the prompted_guided_retry intervention (~24h simulated).",
+        "payload": {
+          "recovered_amount": "905.78",
+          "simulated_hours_to_recovery": 24.0
+        },
+        "timestamp": "2026-09-04T07:45:10.060241+05:30"
+      }
+    ]
+  },
+  "pipelineRun": {
+    "ran_at": "2026-09-04T02:15:33.735744+00:00",
+    "metrics": {
+      "total_at_risk": "184480.53",
+      "total_recovered": "79558.16",
+      "overall_recovery_rate": 0.43,
+      "event_count": 74,
+      "by_root_cause": [
+        {
+          "root_cause": "insufficient_funds",
+          "at_risk": "2937.51",
+          "recovered": "0.00",
+          "count": 2,
+          "recovered_count": 0,
+          "recovery_rate": 0.0
+        },
+        {
+          "root_cause": "expired_instrument",
+          "at_risk": "43246.57",
+          "recovered": "31680.42",
+          "count": 14,
+          "recovered_count": 9,
+          "recovery_rate": 0.64
+        },
+        {
+          "root_cause": "bank_downtime",
+          "at_risk": "24039.17",
+          "recovered": "15094.90",
+          "count": 6,
+          "recovered_count": 3,
+          "recovery_rate": 0.5
+        },
+        {
+          "root_cause": "auth_failure",
+          "at_risk": "7836.02",
+          "recovered": "4554.61",
+          "count": 8,
+          "recovered_count": 4,
+          "recovery_rate": 0.5
+        },
+        {
+          "root_cause": "card_declined",
+          "at_risk": "5115.17",
+          "recovered": "631.94",
+          "count": 4,
+          "recovered_count": 1,
+          "recovery_rate": 0.25
+        },
+        {
+          "root_cause": "checkout_abandoned",
+          "at_risk": "36930.27",
+          "recovered": "8974.11",
+          "count": 20,
+          "recovered_count": 7,
+          "recovery_rate": 0.35
+        },
+        {
+          "root_cause": "invoice_forgotten",
+          "at_risk": "44396.49",
+          "recovered": "18622.18",
+          "count": 16,
+          "recovered_count": 6,
+          "recovery_rate": 0.38
+        },
+        {
+          "root_cause": "suspected_fraud",
+          "at_risk": "19979.33",
+          "recovered": "0.00",
+          "count": 4,
+          "recovered_count": 0,
+          "recovery_rate": 0.0
+        }
+      ],
+      "by_intervention": [
+        {
+          "intervention": "sent_nudge",
+          "count": 20,
+          "recovered_count": 7,
+          "recovery_rate": 0.35,
+          "at_risk": "36930.27",
+          "recovered": "8974.11"
+        },
+        {
+          "intervention": "prompted_guided_retry",
+          "count": 8,
+          "recovered_count": 4,
+          "recovery_rate": 0.5,
+          "at_risk": "7836.02",
+          "recovered": "4554.61"
+        },
+        {
+          "intervention": "escalation_stage_advanced",
+          "count": 16,
+          "recovered_count": 6,
+          "recovery_rate": 0.38,
+          "at_risk": "44396.49",
+          "recovered": "18622.18"
+        },
+        {
+          "intervention": "sent_reauth_link",
+          "count": 14,
+          "recovered_count": 9,
+          "recovery_rate": 0.64,
+          "at_risk": "43246.57",
+          "recovered": "31680.42"
+        },
+        {
+          "intervention": "suggested_alternate_method",
+          "count": 6,
+          "recovered_count": 3,
+          "recovery_rate": 0.5,
+          "at_risk": "24039.17",
+          "recovered": "15094.90"
+        },
+        {
+          "intervention": "scheduled_retry",
+          "count": 6,
+          "recovered_count": 1,
+          "recovery_rate": 0.17,
+          "at_risk": "8052.68",
+          "recovered": "631.94"
+        }
+      ],
+      "avg_hours_to_recovery": 31.4,
+      "status_breakdown": {
+        "detected": 0,
+        "diagnosed": 0,
+        "action_taken": 0,
+        "recovered": 30,
+        "exception": 40,
+        "flagged": 4
+      },
+      "exceptions": [
+        {
+          "event_id": "evt_030",
+          "event_type": "failed_payment",
+          "amount": "274.59",
+          "root_cause": "auth_failure",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_048",
+          "event_type": "overdue_invoice",
+          "amount": "200.00",
+          "root_cause": "invoice_forgotten",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_062",
+          "event_type": "failed_payment",
+          "amount": "568.24",
+          "root_cause": "auth_failure",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_061",
+          "event_type": "overdue_invoice",
+          "amount": "7092.97",
+          "root_cause": "invoice_forgotten",
+          "reason": "invoice escalation to stage 2 (formal_notice) needs human sign-off (amount above Rs 5000); flagged for review and not executed"
+        },
+        {
+          "event_id": "evt_047",
+          "event_type": "overdue_invoice",
+          "amount": "1082.52",
+          "root_cause": "invoice_forgotten",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_056",
+          "event_type": "abandoned_checkout",
+          "amount": "5022.54",
+          "root_cause": "checkout_abandoned",
+          "reason": "bounded discount offer on abandoned checkout needs human sign-off (amount above Rs 5000); flagged for review and not executed"
+        },
+        {
+          "event_id": "evt_057",
+          "event_type": "failed_payment",
+          "amount": "1076.05",
+          "root_cause": "bank_downtime",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_001",
+          "event_type": "abandoned_checkout",
+          "amount": "1649.94",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_000",
+          "event_type": "abandoned_checkout",
+          "amount": "3704.59",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_066",
+          "event_type": "failed_payment",
+          "amount": "682.79",
+          "root_cause": "card_declined",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_023",
+          "event_type": "overdue_invoice",
+          "amount": "5038.42",
+          "root_cause": "invoice_forgotten",
+          "reason": "invoice escalation to stage 3 (human_handoff) needs human sign-off (amount above Rs 5000); flagged for review and not executed"
+        },
+        {
+          "event_id": "evt_060",
+          "event_type": "expired_mandate",
+          "amount": "1364.09",
+          "root_cause": "expired_instrument",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_069",
+          "event_type": "abandoned_checkout",
+          "amount": "2043.42",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_067",
+          "event_type": "failed_payment",
+          "amount": "1830.99",
+          "root_cause": "auth_failure",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_036",
+          "event_type": "abandoned_checkout",
+          "amount": "2144.61",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_043",
+          "event_type": "expired_mandate",
+          "amount": "5185.04",
+          "root_cause": "expired_instrument",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_019",
+          "event_type": "abandoned_checkout",
+          "amount": "638.59",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_054",
+          "event_type": "overdue_invoice",
+          "amount": "2398.06",
+          "root_cause": "invoice_forgotten",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_065",
+          "event_type": "failed_payment",
+          "amount": "2142.60",
+          "root_cause": "card_declined",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_040",
+          "event_type": "overdue_invoice",
+          "amount": "2927.49",
+          "root_cause": "invoice_forgotten",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_034",
+          "event_type": "failed_payment",
+          "amount": "2455.49",
+          "root_cause": "insufficient_funds",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_024",
+          "event_type": "failed_payment",
+          "amount": "958.75",
+          "root_cause": "expired_instrument",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_022",
+          "event_type": "abandoned_checkout",
+          "amount": "5830.29",
+          "root_cause": "checkout_abandoned",
+          "reason": "bounded discount offer on abandoned checkout needs human sign-off (amount above Rs 5000); flagged for review and not executed"
+        },
+        {
+          "event_id": "evt_042",
+          "event_type": "abandoned_checkout",
+          "amount": "802.34",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_033",
+          "event_type": "overdue_invoice",
+          "amount": "1594.95",
+          "root_cause": "invoice_forgotten",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_064",
+          "event_type": "abandoned_checkout",
+          "amount": "1551.87",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_038",
+          "event_type": "abandoned_checkout",
+          "amount": "483.80",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_017",
+          "event_type": "failed_payment",
+          "amount": "1657.84",
+          "root_cause": "card_declined",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_003",
+          "event_type": "failed_payment",
+          "amount": "607.59",
+          "root_cause": "auth_failure",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_021",
+          "event_type": "overdue_invoice",
+          "amount": "548.15",
+          "root_cause": "invoice_forgotten",
+          "reason": "escalated to human handoff, automated recovery stops"
+        },
+        {
+          "event_id": "evt_068",
+          "event_type": "failed_payment",
+          "amount": "6536.33",
+          "root_cause": "bank_downtime",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_052",
+          "event_type": "failed_payment",
+          "amount": "1331.89",
+          "root_cause": "bank_downtime",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_010",
+          "event_type": "overdue_invoice",
+          "amount": "1389.34",
+          "root_cause": "invoice_forgotten",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_059",
+          "event_type": "overdue_invoice",
+          "amount": "3502.41",
+          "root_cause": "invoice_forgotten",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_004",
+          "event_type": "failed_payment",
+          "amount": "3515.07",
+          "root_cause": "expired_instrument",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_049",
+          "event_type": "abandoned_checkout",
+          "amount": "464.82",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_063",
+          "event_type": "abandoned_checkout",
+          "amount": "3039.90",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_025",
+          "event_type": "failed_payment",
+          "amount": "482.02",
+          "root_cause": "insufficient_funds",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_028",
+          "event_type": "abandoned_checkout",
+          "amount": "579.45",
+          "root_cause": "checkout_abandoned",
+          "reason": "intervention exhausted, no response"
+        },
+        {
+          "event_id": "evt_013",
+          "event_type": "expired_mandate",
+          "amount": "543.20",
+          "root_cause": "expired_instrument",
+          "reason": "intervention exhausted, no response"
+        }
+      ],
+      "fraud_cluster": {
+        "flagged_event_ids": [
+          "fraud_03",
+          "fraud_01",
+          "fraud_02",
+          "fraud_00"
+        ],
+        "reason": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54\u20135003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery."
+      }
+    }
+  },
+  "metrics": {
+    "total_at_risk": "184480.53",
+    "total_recovered": "79558.16",
+    "overall_recovery_rate": 0.43,
+    "event_count": 74,
+    "by_root_cause": [
+      {
+        "root_cause": "insufficient_funds",
+        "at_risk": "2937.51",
+        "recovered": "0.00",
+        "count": 2,
+        "recovered_count": 0,
+        "recovery_rate": 0.0
+      },
+      {
+        "root_cause": "expired_instrument",
+        "at_risk": "43246.57",
+        "recovered": "31680.42",
+        "count": 14,
+        "recovered_count": 9,
+        "recovery_rate": 0.64
+      },
+      {
+        "root_cause": "bank_downtime",
+        "at_risk": "24039.17",
+        "recovered": "15094.90",
+        "count": 6,
+        "recovered_count": 3,
+        "recovery_rate": 0.5
+      },
+      {
+        "root_cause": "auth_failure",
+        "at_risk": "7836.02",
+        "recovered": "4554.61",
+        "count": 8,
+        "recovered_count": 4,
+        "recovery_rate": 0.5
+      },
+      {
+        "root_cause": "card_declined",
+        "at_risk": "5115.17",
+        "recovered": "631.94",
+        "count": 4,
+        "recovered_count": 1,
+        "recovery_rate": 0.25
+      },
+      {
+        "root_cause": "checkout_abandoned",
+        "at_risk": "36930.27",
+        "recovered": "8974.11",
+        "count": 20,
+        "recovered_count": 7,
+        "recovery_rate": 0.35
+      },
+      {
+        "root_cause": "invoice_forgotten",
+        "at_risk": "44396.49",
+        "recovered": "18622.18",
+        "count": 16,
+        "recovered_count": 6,
+        "recovery_rate": 0.38
+      },
+      {
+        "root_cause": "suspected_fraud",
+        "at_risk": "19979.33",
+        "recovered": "0.00",
+        "count": 4,
+        "recovered_count": 0,
+        "recovery_rate": 0.0
+      }
+    ],
+    "by_intervention": [
+      {
+        "intervention": "sent_nudge",
+        "count": 20,
+        "recovered_count": 7,
+        "recovery_rate": 0.35,
+        "at_risk": "36930.27",
+        "recovered": "8974.11"
+      },
+      {
+        "intervention": "prompted_guided_retry",
+        "count": 8,
+        "recovered_count": 4,
+        "recovery_rate": 0.5,
+        "at_risk": "7836.02",
+        "recovered": "4554.61"
+      },
+      {
+        "intervention": "escalation_stage_advanced",
+        "count": 16,
+        "recovered_count": 6,
+        "recovery_rate": 0.38,
+        "at_risk": "44396.49",
+        "recovered": "18622.18"
+      },
+      {
+        "intervention": "sent_reauth_link",
+        "count": 14,
+        "recovered_count": 9,
+        "recovery_rate": 0.64,
+        "at_risk": "43246.57",
+        "recovered": "31680.42"
+      },
+      {
+        "intervention": "suggested_alternate_method",
+        "count": 6,
+        "recovered_count": 3,
+        "recovery_rate": 0.5,
+        "at_risk": "24039.17",
+        "recovered": "15094.90"
+      },
+      {
+        "intervention": "scheduled_retry",
+        "count": 6,
+        "recovered_count": 1,
+        "recovery_rate": 0.17,
+        "at_risk": "8052.68",
+        "recovered": "631.94"
+      }
+    ],
+    "avg_hours_to_recovery": 31.4,
+    "status_breakdown": {
+      "detected": 0,
+      "diagnosed": 0,
+      "action_taken": 0,
+      "recovered": 30,
+      "exception": 40,
+      "flagged": 4
+    },
+    "exceptions": [
+      {
+        "event_id": "evt_030",
+        "event_type": "failed_payment",
+        "amount": "274.59",
+        "root_cause": "auth_failure",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_048",
+        "event_type": "overdue_invoice",
+        "amount": "200.00",
+        "root_cause": "invoice_forgotten",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_062",
+        "event_type": "failed_payment",
+        "amount": "568.24",
+        "root_cause": "auth_failure",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_061",
+        "event_type": "overdue_invoice",
+        "amount": "7092.97",
+        "root_cause": "invoice_forgotten",
+        "reason": "invoice escalation to stage 2 (formal_notice) needs human sign-off (amount above Rs 5000); flagged for review and not executed"
+      },
+      {
+        "event_id": "evt_047",
+        "event_type": "overdue_invoice",
+        "amount": "1082.52",
+        "root_cause": "invoice_forgotten",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_056",
+        "event_type": "abandoned_checkout",
+        "amount": "5022.54",
+        "root_cause": "checkout_abandoned",
+        "reason": "bounded discount offer on abandoned checkout needs human sign-off (amount above Rs 5000); flagged for review and not executed"
+      },
+      {
+        "event_id": "evt_057",
+        "event_type": "failed_payment",
+        "amount": "1076.05",
+        "root_cause": "bank_downtime",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_001",
+        "event_type": "abandoned_checkout",
+        "amount": "1649.94",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_000",
+        "event_type": "abandoned_checkout",
+        "amount": "3704.59",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_066",
+        "event_type": "failed_payment",
+        "amount": "682.79",
+        "root_cause": "card_declined",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_023",
+        "event_type": "overdue_invoice",
+        "amount": "5038.42",
+        "root_cause": "invoice_forgotten",
+        "reason": "invoice escalation to stage 3 (human_handoff) needs human sign-off (amount above Rs 5000); flagged for review and not executed"
+      },
+      {
+        "event_id": "evt_060",
+        "event_type": "expired_mandate",
+        "amount": "1364.09",
+        "root_cause": "expired_instrument",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_069",
+        "event_type": "abandoned_checkout",
+        "amount": "2043.42",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_067",
+        "event_type": "failed_payment",
+        "amount": "1830.99",
+        "root_cause": "auth_failure",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_036",
+        "event_type": "abandoned_checkout",
+        "amount": "2144.61",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_043",
+        "event_type": "expired_mandate",
+        "amount": "5185.04",
+        "root_cause": "expired_instrument",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_019",
+        "event_type": "abandoned_checkout",
+        "amount": "638.59",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_054",
+        "event_type": "overdue_invoice",
+        "amount": "2398.06",
+        "root_cause": "invoice_forgotten",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_065",
+        "event_type": "failed_payment",
+        "amount": "2142.60",
+        "root_cause": "card_declined",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_040",
+        "event_type": "overdue_invoice",
+        "amount": "2927.49",
+        "root_cause": "invoice_forgotten",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_034",
+        "event_type": "failed_payment",
+        "amount": "2455.49",
+        "root_cause": "insufficient_funds",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_024",
+        "event_type": "failed_payment",
+        "amount": "958.75",
+        "root_cause": "expired_instrument",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_022",
+        "event_type": "abandoned_checkout",
+        "amount": "5830.29",
+        "root_cause": "checkout_abandoned",
+        "reason": "bounded discount offer on abandoned checkout needs human sign-off (amount above Rs 5000); flagged for review and not executed"
+      },
+      {
+        "event_id": "evt_042",
+        "event_type": "abandoned_checkout",
+        "amount": "802.34",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_033",
+        "event_type": "overdue_invoice",
+        "amount": "1594.95",
+        "root_cause": "invoice_forgotten",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_064",
+        "event_type": "abandoned_checkout",
+        "amount": "1551.87",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_038",
+        "event_type": "abandoned_checkout",
+        "amount": "483.80",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_017",
+        "event_type": "failed_payment",
+        "amount": "1657.84",
+        "root_cause": "card_declined",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_003",
+        "event_type": "failed_payment",
+        "amount": "607.59",
+        "root_cause": "auth_failure",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_021",
+        "event_type": "overdue_invoice",
+        "amount": "548.15",
+        "root_cause": "invoice_forgotten",
+        "reason": "escalated to human handoff, automated recovery stops"
+      },
+      {
+        "event_id": "evt_068",
+        "event_type": "failed_payment",
+        "amount": "6536.33",
+        "root_cause": "bank_downtime",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_052",
+        "event_type": "failed_payment",
+        "amount": "1331.89",
+        "root_cause": "bank_downtime",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_010",
+        "event_type": "overdue_invoice",
+        "amount": "1389.34",
+        "root_cause": "invoice_forgotten",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_059",
+        "event_type": "overdue_invoice",
+        "amount": "3502.41",
+        "root_cause": "invoice_forgotten",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_004",
+        "event_type": "failed_payment",
+        "amount": "3515.07",
+        "root_cause": "expired_instrument",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_049",
+        "event_type": "abandoned_checkout",
+        "amount": "464.82",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_063",
+        "event_type": "abandoned_checkout",
+        "amount": "3039.90",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_025",
+        "event_type": "failed_payment",
+        "amount": "482.02",
+        "root_cause": "insufficient_funds",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_028",
+        "event_type": "abandoned_checkout",
+        "amount": "579.45",
+        "root_cause": "checkout_abandoned",
+        "reason": "intervention exhausted, no response"
+      },
+      {
+        "event_id": "evt_013",
+        "event_type": "expired_mandate",
+        "amount": "543.20",
+        "root_cause": "expired_instrument",
+        "reason": "intervention exhausted, no response"
+      }
+    ],
+    "fraud_cluster": {
+      "flagged_event_ids": [
+        "fraud_03",
+        "fraud_01",
+        "fraud_02",
+        "fraud_00"
+      ],
+      "reason": "Event fraud_03 matches a fraud-signature cluster: reason 'card_declined', 4 distinct customers in a ~23-minute window within a 4981.54\u20135003.06 amount band, each already retried hard. Halting the whole cluster for human review rather than attempting recovery."
+    }
+  }
+}
