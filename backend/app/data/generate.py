@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import random
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -27,15 +28,22 @@ from app.db import store
 from app.db.store import EventCreate, EventType
 
 # --- real Razorpay failure codes, per event type -------------------------
-# https://razorpay.com/docs/errors/payments/list/
+# Verified 2026-09-03 against the test-mode failed-card-payment code list
+# (razorpay.com/docs/payments/payments/test-card-details): BAD_REQUEST_ERROR
+# codes `payment_timed_out`, `insufficient_fund`, `payment_cancelled`,
+# `card_declined`, `card_disabled_for_online_payments`, `card_number_invalid`;
+# GATEWAY_ERROR codes `gateway_technical_error`, `authentication_failed`.
+# `card_expired` and the `bank_*` codes are real gateway/netbanking decline
+# reasons kept for root-cause spread.
 RAZORPAY_FAILURE_REASONS: dict[EventType, list[str | None]] = {
     EventType.FAILED_PAYMENT: [
-        "insufficient_funds",       # customer -- wait + retry near a salary window
+        "insufficient_fund",        # customer -- wait + retry near a salary window
         "card_expired",             # customer -- needs a fresh instrument
-        "incorrect_otp",            # customer -- guided retry
+        "authentication_failed",    # customer -- guided retry (OTP/3DS)
+        "payment_timed_out",        # customer -- guided retry
         "card_declined",            # gateway  -- try an alternate method
+        "card_number_invalid",      # customer -- needs a fresh instrument
         "bank_not_available",       # gateway  -- retry after a delay
-        "bank_technical_error",     # gateway  -- retry after a delay
         "gateway_technical_error",  # gateway  -- retry after a delay
     ],
     EventType.EXPIRED_MANDATE: [
@@ -58,6 +66,21 @@ _MIN_AMOUNT = Decimal("200")
 _MAX_AMOUNT = Decimal("50000")
 
 CSV_PATH = Path(__file__).resolve().parents[2] / "data" / "synthetic_events.csv"
+
+# --- time spread -------------------------------------------------------------
+# The batch is backdated over BATCH_SPAN_DAYS so events have a realistic
+# `created_at` spread (the Diagnosis fraud-cluster check needs a real time
+# axis). `_epoch()` is the "now" the span ends at -- taken once per build so a
+# single build is internally consistent; not seed-deterministic in wall-clock
+# terms, but all schema/id/amount tests are.
+BATCH_SPAN_DAYS = 14
+FRAUD_WINDOW_MINUTES = 40          # cluster falls inside one < 60-min window
+FRAUD_DAYS_AGO = 3                 # where in the span the cluster sits
+
+
+def _epoch() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 # fraud cluster shape
 FRAUD_REASON = "card_declined"
@@ -94,6 +117,9 @@ def build_batch(count: int = 70, seed: int = 42) -> list[EventCreate]:
     fake = Faker()
     fake.seed_instance(seed)
 
+    span_start = _epoch() - timedelta(days=BATCH_SPAN_DAYS)
+    span_seconds = BATCH_SPAN_DAYS * 24 * 3600
+
     batch: list[EventCreate] = []
     for i in range(count):
         etype = _pick_type(rng)
@@ -102,6 +128,7 @@ def build_batch(count: int = 70, seed: int = 42) -> list[EventCreate]:
         days_overdue = (
             rng.randint(1, 90) if etype is EventType.OVERDUE_INVOICE else 0
         )
+        created_at = span_start + timedelta(seconds=rng.uniform(0, span_seconds))
         batch.append(
             EventCreate(
                 event_id=f"evt_{i:03d}",
@@ -111,6 +138,7 @@ def build_batch(count: int = 70, seed: int = 42) -> list[EventCreate]:
                 raw_failure_reason=reason,
                 attempts_so_far=attempts,
                 days_overdue=days_overdue,
+                created_at=created_at,
             )
         )
     return batch
@@ -126,6 +154,7 @@ def build_fraud_cluster(size: int = 4, seed: int = 42) -> list[EventCreate]:
     fake.seed_instance(seed + 1)
 
     low, high = float(FRAUD_AMOUNT_LOW), float(FRAUD_AMOUNT_HIGH)
+    cluster_start = _epoch() - timedelta(days=FRAUD_DAYS_AGO)
     return [
         EventCreate(
             event_id=f"{FRAUD_ID_PREFIX}{i:02d}",
@@ -135,6 +164,9 @@ def build_fraud_cluster(size: int = 4, seed: int = 42) -> list[EventCreate]:
             raw_failure_reason=FRAUD_REASON,
             attempts_so_far=rng.randint(2, 3),   # already retried hard
             days_overdue=0,
+            # all members inside one tight (< 60 min) window
+            created_at=cluster_start
+            + timedelta(minutes=rng.uniform(0, FRAUD_WINDOW_MINUTES)),
         )
         for i in range(size)
     ]

@@ -60,13 +60,34 @@ def test_update_event_diagnosis_step(session):
     updated = store.update_event(
         session, "evt_2",
         status=store.EventStatus.DIAGNOSED,
-        root_cause="forgotten_invoice",
+        root_cause=store.RootCause.INVOICE_FORGOTTEN,
         diagnosis_confidence=0.9,
     )
     assert updated.status == "diagnosed"
-    assert updated.root_cause == "forgotten_invoice"
+    assert updated.root_cause == "invoice_forgotten"
     assert updated.diagnosis_confidence == 0.9
     assert updated.updated_at >= updated.created_at
+
+
+def test_insert_event_honours_backdated_created_at(session):
+    from datetime import datetime, timedelta, timezone
+
+    ts = datetime.now(timezone.utc) - timedelta(days=5)
+    ev = store.insert_event(
+        session, event_id="evt_bd", event_type=store.EventType.FAILED_PAYMENT,
+        customer_id="cust_bd", amount=500, created_at=ts,
+    )
+    assert abs((ev.created_at - ts).total_seconds()) < 1
+    assert abs((ev.updated_at - ts).total_seconds()) < 1
+
+
+def test_update_event_rejects_unknown_root_cause(session):
+    store.insert_event(
+        session, event_id="evt_rc", event_type=store.EventType.FAILED_PAYMENT,
+        customer_id="cust_rc", amount=100,
+    )
+    with pytest.raises(ValueError):
+        store.update_event(session, "evt_rc", root_cause="not_a_cause")
 
 
 def test_update_event_rejects_unknown_column(session):

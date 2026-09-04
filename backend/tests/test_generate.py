@@ -42,6 +42,22 @@ def test_overdue_and_abandoned_have_no_gateway_reason():
             assert r.raw_failure_reason is None
 
 
+def test_batch_created_at_is_spread_over_the_span():
+    batch = build_batch(count=80, seed=42)
+    stamps = [r.created_at for r in batch]
+    assert all(s is not None for s in stamps)
+    span = max(stamps) - min(stamps)
+    # spread over most of the BATCH_SPAN_DAYS window, not all bunched up
+    assert span.total_seconds() > (generate.BATCH_SPAN_DAYS - 2) * 86400
+
+
+def test_fraud_cluster_falls_in_one_tight_time_window():
+    cluster = build_fraud_cluster(size=4, seed=42)
+    stamps = [r.created_at for r in cluster]
+    span = max(stamps) - min(stamps)
+    assert span.total_seconds() <= 60 * 60  # the < 60-min signature clause
+
+
 def test_deterministic_for_a_seed():
     a = build_batch(count=60, seed=99)
     b = build_batch(count=60, seed=99)

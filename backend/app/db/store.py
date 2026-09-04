@@ -5,7 +5,10 @@ through this module -- never with raw SQL of its own. The `audit_log` table
 IS the audit trail the buildathon brief requires: every money-related agent
 action is written here via `log_action()` as it happens.
 
-Schema mirrors CLAUDE.md Section 5.
+Schema mirrors CLAUDE.md Section 5. Controlled vocabularies live here as
+`StrEnum`s: `EventType`, `EventStatus`, `Agent`, and `RootCause` (the
+Diagnosis Agent's output vocabulary, one intervention each -- see
+backend/app/agents/AGENTS_CONTRACT.md).
 Stack: SQLModel (SQLAlchemy + Pydantic) on PostgreSQL 16, psycopg 3 driver.
 
 Two layers of models:
@@ -70,6 +73,24 @@ class Agent(StrEnum):
     RECOVERY = "recovery"
     TRIAGE = "triage"        # the fraud-cluster check; can force status -> flagged
     AUDIT = "audit"
+
+
+class RootCause(StrEnum):
+    """Controlled vocabulary the Diagnosis Agent writes to `Event.root_cause`.
+    Each member maps to exactly one Recovery intervention (plan.md Section 2).
+    The DB column stays `str | None`; this enum types the schema layer and the
+    agents' shared contract (backend/app/agents/AGENTS_CONTRACT.md).
+    """
+
+    INSUFFICIENT_FUNDS = "insufficient_funds"      # wait + retry near a salary-credit window
+    EXPIRED_INSTRUMENT = "expired_instrument"      # send re-authorization / re-mandate link
+    BANK_DOWNTIME = "bank_downtime"                # suggest an alternate payment method
+    AUTH_FAILURE = "auth_failure"                  # prompt a fresh guided retry
+    CARD_DECLINED = "card_declined"                # one cautious retry, then exception
+    CHECKOUT_ABANDONED = "checkout_abandoned"      # personalized nudge, bounded discount above a gate
+    INVOICE_FORGOTTEN = "invoice_forgotten"        # escalation ladder: reminder -> notice -> human handoff
+    SUSPECTED_FRAUD = "suspected_fraud"            # set by triage only; Recovery refuses to act
+    UNKNOWN = "unknown"                            # classifier could not decide -> honest exception
 
 
 def _utcnow() -> datetime:
@@ -146,6 +167,10 @@ class EventCreate(SQLModel):
     attempts_so_far: int = Field(default=0, ge=0)
     days_overdue: int = Field(default=0, ge=0)
     status: EventStatus = EventStatus.DETECTED
+    created_at: datetime | None = None   # optional backdate; the synthetic
+    #   generator sets it to spread the batch over time. When omitted the
+    #   table default (_utcnow) applies. `updated_at` follows `created_at`
+    #   on insert when this is set.
 
     @field_validator("currency")
     @classmethod
@@ -172,7 +197,7 @@ class EventUpdate(SQLModel):
     attempts_so_far: int | None = Field(default=None, ge=0)
     days_overdue: int | None = Field(default=None, ge=0)
     status: EventStatus | None = None
-    root_cause: str | None = None
+    root_cause: RootCause | None = None
     diagnosis_confidence: float | None = Field(default=None, ge=0, le=1)
     recovered_amount: Decimal | None = Field(default=None, ge=0, max_digits=14)
 
@@ -273,7 +298,13 @@ def insert_event(
     it reaches the database.
     """
     payload = data if data is not None else EventCreate(**kwargs)
-    event = Event(**payload.model_dump())
+    values = payload.model_dump()
+    if values.get("created_at") is not None:
+        # backdated insert (synthetic generator): keep updated_at in step
+        values.setdefault("updated_at", values["created_at"])
+    else:
+        values.pop("created_at", None)  # let the table default (_utcnow) apply
+    event = Event(**values)
     session.add(event)
     session.commit()
     session.refresh(event)
