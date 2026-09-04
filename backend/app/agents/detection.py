@@ -32,7 +32,10 @@ from app.db.store import Agent, EventStatus, EventType, MONEY
 # event types this pipeline knows how to recover
 _SUPPORTED_EVENT_TYPES = {t.value for t in EventType}
 
-# event types that must carry a gateway failure reason for Diagnosis to work
+"""If a payment or recurring subscription fails at the bank, the bank must tell us why (the error code). 
+If it doesn't, the AI cannot diagnose the problem.
+"""
+
 _NEEDS_FAILURE_SIGNAL = {
     EventType.FAILED_PAYMENT.value,
     EventType.EXPIRED_MANDATE.value,

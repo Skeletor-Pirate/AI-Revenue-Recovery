@@ -26,6 +26,8 @@ from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
+from datetime import datetime, timezone
+
 from app.config import get_settings
 from app.db import store
 from app.db.store import EventCreate, EventType
@@ -84,6 +86,15 @@ def _customer_id(entity: dict[str, Any]) -> str:
 
 
 def _failure_reason(entity: dict[str, Any]) -> str | None:
+    error_obj = entity.get("error")
+    if isinstance(error_obj, dict):
+        nested_reason = (
+            error_obj.get("reason")
+            or error_obj.get("code")
+            or error_obj.get("description")
+        )
+        if nested_reason:
+            return nested_reason
     return (
         entity.get("error_reason")
         or entity.get("error_code")
@@ -116,6 +127,21 @@ def razorpay_event_to_eventcreate(event: dict[str, Any]) -> EventCreate | None:
     if event_type is EventType.EXPIRED_MANDATE and not reason:
         reason = "mandate_creation_failed"
 
+    days_overdue = 0
+    if event_type is EventType.OVERDUE_INVOICE:
+        expire_by = entity.get("expire_by")
+        if expire_by:
+            now_ts = int(datetime.now(timezone.utc).timestamp())
+            diff = (now_ts - int(expire_by)) // 86400
+            days_overdue = max(1, diff)
+        else:
+            days_overdue = 1  # invoice.expired signifies at least 1 day past expiration
+
+    created_at_val = entity.get("created_at") or event.get("created_at")
+    created_at_dt = None
+    if created_at_val and isinstance(created_at_val, (int, float)):
+        created_at_dt = datetime.fromtimestamp(created_at_val, tz=timezone.utc)
+
     return EventCreate(
         event_id=f"{_ID_PREFIX}{raw_id}",
         event_type=event_type,
@@ -124,6 +150,8 @@ def razorpay_event_to_eventcreate(event: dict[str, Any]) -> EventCreate | None:
         currency=(entity.get("currency") or "INR"),
         raw_failure_reason=reason,
         attempts_so_far=int(entity.get("attempts") or 0),
+        days_overdue=days_overdue,
+        created_at=created_at_dt,
     )
 
 
