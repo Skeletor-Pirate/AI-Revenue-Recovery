@@ -8,8 +8,12 @@ Diagrams and design rationale. Companion to
 > the same change that alters the architecture, data model, agent flow, or
 > runtime topology.
 
-Last updated: 2026-08-28 — after Section 9 step 2 (synthetic data generator);
-datastore switched from Docker to a local PostgreSQL process.
+Last updated: 2026-09-04 — Phase B + C of the agent-team build (plan.md §9
+steps 3–8): all four agents built + merged, `app/pipeline.py` chains them,
+`app/api/*` routers mounted in `main.py`, React dashboard built. Pipeline nodes
+recoloured `done`. Prior: 2026-09-03 — Phase A (RootCause vocabulary,
+cross-agent + API contract frozen). Prior: 2026-08-28 — step 2 (synthetic data
+generator); datastore switched from Docker to a local PostgreSQL process.
 
 ---
 
@@ -60,11 +64,13 @@ flowchart TD
 
     classDef done fill:#d3f9d8,stroke:#2b8a3e;
     classDef todo fill:#fff3bf,stroke:#e67700;
-    class SYN,STORE done;
-    class DET,DIA,REC,AUD,API,UI,WH todo;
+    class SYN,STORE,DET,DIA,REC,AUD,API,UI done;
+    class WH todo;
 ```
 
-Green = built. Amber = not yet built.
+Green = built. Amber = not yet built (only the stretch Razorpay webhook
+listener remains). `app/pipeline.py` chains DET→DIA→REC→AUD; `app/api/*`
+exposes the store + pipeline over REST; the React dashboard renders it.
 
 ---
 
@@ -116,10 +122,10 @@ erDiagram
         text        raw_failure_reason "nullable — gateway words pre-diagnosis"
         int         attempts_so_far "stopping-rule counter"
         int         days_overdue "B2B invoices"
-        timestamptz created_at
+        timestamptz created_at "generator backdates/spreads over 14 days; fraud cluster tight-windowed"
         timestamptz updated_at
         text        status "detected → diagnosed → action_taken → recovered | exception | flagged"
-        text        root_cause "nullable — set by Diagnosis"
+        text        root_cause "nullable — RootCause enum: insufficient_funds | expired_instrument | bank_downtime | auth_failure | card_declined | checkout_abandoned | invoice_forgotten | suspected_fraud | unknown"
         float       diagnosis_confidence "nullable 0..1"
         numeric     recovered_amount "14,2 — default 0"
     }
@@ -197,13 +203,13 @@ sequenceDiagram
 |---|---|---|---|
 | Event store | `app/db/store.py` | single interface to Postgres; table + schema models; CRUD + audit | no raw SQL elsewhere; `log_action` is the only audit write; FK-checked; validated input |
 | Synthetic generator | `app/data/generate.py` | deterministic 50–100 event batch + fraud cluster; real Razorpay failure codes | reproducible per seed; every record schema-valid; fraud cluster has a detectable shared signature |
-| Detection Agent | `app/agents/detection.py` (todo) | flag genuinely at-risk events; route obvious non-recoverables to `exception` | one audit row per decision |
-| Diagnosis Agent | `app/agents/diagnosis.py` (todo) | rules-first root-cause classification; Claude fallback for free-text; **fraud-cluster triage → `flagged`** | confidence recorded; triage reasoning explicit |
-| Recovery Agent | `app/agents/recovery.py` (todo) | root-cause-specific intervention; draft outreach; **enforce stopping rules** (max attempts, max escalation, cooldown, amount gate) | bounded; refuses to act on `flagged`; human-approval flag above threshold |
-| Audit / Reporting | `app/agents/audit.py` (todo) | roll up `audit_log` + `events` into metrics | computed over the full batch; exceptions never hidden |
-| Pipeline | `app/pipeline.py` (todo) | wire agents 3–6 into one run | clean summary output |
-| API | `app/main.py`, `app/api/*` (partial) | REST over store + pipeline | CORS to frontend only |
-| Dashboard | `frontend/src/*` (shell) | at-risk queue, decision trail, charts, exception list | mirrors Razorpay's plain-English tone |
+| Detection Agent | `app/agents/detection.py` ✅ | flag genuinely at-risk events; route obvious non-recoverables to `exception` | one audit row per decision; idempotent |
+| Diagnosis Agent | `app/agents/diagnosis.py` ✅ | rules-first root-cause classification; Claude fallback for free-text; **fraud-cluster triage → `flagged`** | confidence recorded; triage reasoning explicit; Claude isolated + offline-safe |
+| Recovery Agent | `app/agents/recovery.py` ✅ | root-cause-specific intervention; draft outreach; **enforce stopping rules** (max attempts, max escalation, cooldown, amount gate) | bounded; never reads `flagged`; human-approval flag above ₹5,000 (logged, not executed); deterministic outcome |
+| Audit / Reporting | `app/agents/audit.py` ✅ | `compute_metrics` rolls `audit_log` + `events` into the MetricsBlock; `run` writes one `batch_metrics` row | computed over the full batch; exception list complete, never hidden |
+| Pipeline | `app/pipeline.py` ✅ | chains agents 3–6 into one run; returns the MetricsBlock | argparse CLI + printed summary |
+| API | `app/main.py`, `app/api/*` ✅ | REST over store + pipeline (`/api/events`, `/api/events/{id}/audit`, `/api/metrics`, `/api/pipeline/run`) | CORS to frontend only |
+| Dashboard | `frontend/src/pages/*` ✅ (fixtures; live via `VITE_DATA_SOURCE`) | at-risk queue, decision trail, charts, exception list, fraud-cluster alert | mirrors Razorpay's plain-English tone |
 | Webhook listener | `app/webhooks/listener.py` (stretch) | ingest Razorpay test-mode events into Detection | signature-verified |
 
 ---
@@ -219,9 +225,17 @@ sequenceDiagram
 | Audit trail | `audit_log` table, written via `log_action` only, `reasoning` NOT NULL | "the bar" demands explainable + auditable; make silent actions impossible |
 | Backend deps | `uv` + `pyproject.toml` + committed `uv.lock` | fast, reproducible, no `requirements.txt` |
 | App shape | FastAPI backend + React/Vite/Tailwind frontend monorepo | owner chose a real API + JS UI over the brief's single Streamlit app |
-| Determinism | generator seeded (`random.Random(seed)` + `Faker.seed_instance`) | repeatable demo & tests; fraud cluster reproducible |
+| Determinism | generator seeded (`random.Random(seed)` + `Faker.seed_instance`) | repeatable demo & tests; fraud cluster reproducible. `created_at` is spread relative to build-time "now" (wall-clock, not seed-fixed) so the batch always looks recent; ids/amounts/types stay seed-deterministic |
+| Event time axis | optional `EventCreate.created_at`; generator backdates the batch over 14 days, fraud cluster inside one 40-min window | the Diagnosis fraud-cluster check's "tight time clustering" clause needs a real time axis; a single-pass insert would make every `created_at` identical |
 | Failure codes | real Razorpay error codes from `razorpay.com/docs/errors` | judged by Razorpay engineers — data must mirror their real system |
 | Fraud handling | re-classify to `flagged`, Recovery refuses to act | the brief's required "one failure handled gracefully" moment |
+| Parallel build isolation | each backend builder ran its tests against a dedicated DB (`revrec_test_diag` / `_rec` / `_aud`); merge + CI use `revrec_test` | five agents built in parallel without the per-test `reset_db` stomping each other |
+| Audit entry points | `compute_metrics(session) -> dict` (pure, returned by pipeline + API) split from `run() -> list[str]` (writes the `batch_metrics` row) | keeps the uniform agent `run` signature while letting callers get the metrics without a write |
+| Dashboard glass | `GlassCard` = frosted `backdrop-blur`, not the full liquid-glass refraction lib | meaning never rides on the effect; the lib can be layered in later with no API change |
+| Root-cause vocabulary | `RootCause` `StrEnum` in `store.py` (9 members), one Recovery intervention each | keeps Diagnosis output and Recovery routing in lockstep; DB column stays `str \| None` (no migration), enum enforced at the schema layer (`EventUpdate`) |
+| Cross-agent coupling | frozen `AGENTS_CONTRACT.md` (I/O table, `action` registry, stopping-rule constants, fraud signature, `payload` shapes) | agents are sequential at runtime but independent at build time — a contract lets the four modules be built in parallel by separate agents |
+| Recovery outcome | deterministic per `hash(event_id)` vs a per-intervention success rate | stable, repeatable demo + tests; no RNG in the pipeline |
+| Failure codes | corrected to real Razorpay test-mode strings (`insufficient_fund`, `authentication_failed`, `payment_timed_out`, `card_number_invalid`) verified 2026-09-03 | judged by Razorpay engineers; earlier codes (`insufficient_funds`, `incorrect_otp`) were near-misses |
 
 ---
 

@@ -316,7 +316,37 @@ This project is being built *for* Razorpay, evaluated *by* Razorpay engineers, o
 
 - **Done:** Section 9 step 1 (`backend/app/db/store.py` — shared event store) and
   step 2 (`backend/app/data/generate.py` — synthetic batch + fraud cluster).
-- **Next:** step 3, `backend/app/agents/detection.py`.
+- **Done (steps 3–8) via a Claude Code agent team** (team-lead + 5 stage
+  builders): all four agents built and merged — `agents/detection.py` (3),
+  `agents/diagnosis.py` + fraud triage (4), `agents/recovery.py` + stopping
+  rules (5), `agents/audit.py` metrics (6); `app/pipeline.py` chaining them (7);
+  `app/api/*` routers to the frozen contract mounted in `main.py` and a React
+  dashboard (`frontend/src/pages/*`) against a real-run `fixtures.json` (8).
+  `AGENTS_CONTRACT.md` (+ §10 Q&A resolutions) is the frozen cross-agent
+  contract. 113 backend tests green.
+- **Next:** step 9 (Razorpay test-mode webhook listener, stretch) and step 10
+  (README + "what broke" writeup); browser end-to-end pass of the dashboard on
+  the live API.
+- **Failure-code correction (2026-09-03):** §5 / §7 name `raw_failure_reason`
+  values illustratively. Verified against
+  `razorpay.com/docs/payments/payments/test-card-details`, the generator now
+  uses Razorpay's real test-mode failed-card-payment codes: `insufficient_fund`
+  (not `insufficient_funds`), `authentication_failed` (not `incorrect_otp`),
+  `payment_timed_out`, `card_number_invalid`, plus retained `card_expired`,
+  `card_declined`, `bank_not_available`, `gateway_technical_error`. Root-cause
+  mapping is in `AGENTS_CONTRACT.md` §2.
+- **Event time spread (2026-09-03):** `EventCreate` gained an optional
+  `created_at`; the generator backdates the synthetic batch over 14 days and
+  places the fraud cluster inside one 40-minute window, so the Diagnosis
+  fraud-cluster signature can keep its "tight time clustering" (≤ 60 min)
+  clause. `insert_event` honours a supplied `created_at` (and matches
+  `updated_at` to it).
+- **Deterministic recovery outcome (2026-09-04):** whether a recovery attempt
+  succeeds is decided by `sha256(event_id) % 100 < p` against a per-intervention
+  success rate, not an RNG — repeatable demo + tests. `AGENTS_CONTRACT.md` §7.
+- **Dashboard glass fallback (2026-09-04):** `GlassCard` uses a frosted
+  `backdrop-blur` surface, not the full liquid-glass refraction library; can be
+  upgraded later without an API change.
 - **Approved deviations from this brief:** PostgreSQL (not SQLite) — run as a
   local process via `scripts/pg.ps1` since Docker needs WSL2 (unavailable on this
   Win 11 Home box); `uv` (not `pip`/`requirements.txt`); a FastAPI **backend/** +

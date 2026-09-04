@@ -8,7 +8,23 @@ rationale) and [CLAUDE.md](CLAUDE.md) (the project brief).
 > `architecture.md` to be updated in the same change that adds/alters a file,
 > function, class, endpoint, table, or command.
 
-Last updated: 2026-09-03 — merged the four frontend skills (`scroll-craft`,
+Last updated: 2026-09-04 — Phase B + C of the agent-team build: all four agent
+modules built and merged (`detection` / `diagnosis` / `recovery` / `audit`,
+build-order steps 3–6), `app/pipeline.py` chaining them (step 7), `app/api/*`
+routers to the frozen contract mounted in `main.py` (step 8), `fixtures.json`
+regenerated from a real seed-42 run, React dashboard pages built against it.
+113 backend tests green. Prior: 2026-09-03 — Phase A + B0 of the agent-team
+build (plan.md §9 steps 3–6 prep): added `RootCause` StrEnum to `store.py` and typed
+`EventUpdate.root_cause`; added optional `EventCreate.created_at` (backdated
+insert) and taught `insert_event` to honour it; corrected generator
+`raw_failure_reason` codes to real Razorpay test-mode strings
+(`insufficient_fund`, `authentication_failed`, `payment_timed_out`,
+`card_number_invalid`) and spread the batch `created_at` over
+`BATCH_SPAN_DAYS=14` with the fraud cluster in one `FRAUD_WINDOW_MINUTES=40`
+window; froze `backend/app/agents/AGENTS_CONTRACT.md` (incl. §10 Phase-B0 Q&A
+resolutions) and the API response contract (§5); added
+`frontend/src/api/fixtures.json`. Prior: 2026-09-03 — merged the four
+frontend skills (`scroll-craft`,
 `liquid-glass`, `glass-scroll-3d`, `revrec-dashboard`) into one `frontend` skill
 with four modes under `.claude/skills/frontend/<mode>/GUIDE.md` (§3.1); no
 build-order step (tooling/process only). Prior: 2026-09-03 — added the
@@ -116,6 +132,14 @@ RAZORPAY BUILDATHON/
 | `app/config.py` | `Settings` (pydantic-settings) + cached `get_settings()`. See §4. | done |
 | `app/db/store.py` | The shared event store: table models, Pydantic schema models, engine/session helpers, CRUD + audit functions. See §6–§9. | **done, step 1** |
 | `app/data/generate.py` | Deterministic synthetic batch generator incl. fraud cluster. See §10. | **done, step 2** |
+| `app/agents/AGENTS_CONTRACT.md` | Frozen cross-agent contract: per-stage I/O, `RootCause`→intervention map, audit `action` registry, stopping-rule constants, fraud-cluster signature, audit `payload` shapes, Claude-usage rules, API response contract, file boundaries, §10 Phase-B0 Q&A resolutions. | **done** |
+| `app/agents/__init__.py` | Imports the four stage modules; documents the uniform `run(session, *, settings=None) -> list[str]` entry point (audit also `compute_metrics`). | **done, step 7** |
+| `app/agents/detection.py` | Detection Agent. `run(session, *, settings=None) -> list[str]` + pure `classify(event) -> (bool, str)`. Flags at-risk revenue (`flagged_at_risk`); routes obvious non-recoverables to `exception` (`routed_to_exception`). Idempotent. Details: `AGENTS_CONTRACT.md` §1/§3/§7. | **done, step 3** |
+| `app/agents/diagnosis.py` | Diagnosis Agent. `run()`, pure `classify(event) -> (RootCause, conf, matched_reason, reasoning)`, `find_fraud_clusters(events)`, isolated `claude_classify(event, settings)`. Fraud triage first (→ `flagged`/`suspected_fraud`), then rules map, then Claude fallback when rules conf ≤ 0.5 on free text. Details: `AGENTS_CONTRACT.md` §2/§5/§6. | **done, step 4** |
+| `app/agents/recovery.py` | Recovery Agent. `run()`, `draft_outreach(intervention, event, *, settings)`, `_stable_hash(event_id)`; constants `MAX_RETRY_ATTEMPTS=3`, `MAX_ESCALATION_STAGE=3`, `COOLDOWN_HOURS=24`, `HUMAN_APPROVAL_THRESHOLD_INR=Decimal("5000")`, `SUCCESS_RATES`, `HOURS_TO_RECOVERY`, `INTERVENTIONS`. Reads `diagnosed` only. Deterministic recovered/exception; human-approval gate logs + does not execute; escalation never past stage 3. Details: `AGENTS_CONTRACT.md` §4/§7/§10. | **done, step 5** |
+| `app/agents/audit.py` | Audit Agent. `compute_metrics(session) -> dict` (the MetricsBlock — pure read, what the API returns) + `run(session, *, settings=None) -> list[str]` (writes one `batch_metrics` row on the earliest event). Full-batch metrics + complete honest exception list. Details: `AGENTS_CONTRACT.md` §7/§8. | **done, step 6** |
+| `app/pipeline.py` | `run(database_url=None, *, settings=None) -> dict` chains Detection→Diagnosis→Recovery→Audit over the seeded batch and returns the MetricsBlock; argparse CLI (`--reset`, `--count`, `--seed`, `--json`) with a printed summary. | **done, step 7** |
+| `app/api/__init__.py`, `app/api/routes.py` | REST routers to the frozen contract (`/api/events`, `/api/events/{id}/audit`, `/api/metrics`, `/api/pipeline/run`), mounted in `main.py`. See §5. | **done, step 8** |
 
 ### 3.4 `backend/tests/`
 
@@ -135,6 +159,15 @@ RAZORPAY BUILDATHON/
 | `src/main.tsx` | Mounts `<App/>` into `#root` under `<StrictMode>`. |
 | `src/App.tsx` | Shell: header + a line that calls `api.health()` and shows the backend status. Placeholder for the dashboard pages. |
 | `src/api/client.ts` | `request<T>()` fetch wrapper (JSON, throws on non-2xx). `api.health()`. Base URL from `VITE_API_BASE_URL` (blank in dev → proxy). |
+| `src/api/fixtures.json` | Sample of every API response shape (`events`, `eventAudit`, `pipelineRun`, `metrics`) per `AGENTS_CONTRACT.md` §8. **Regenerated from a real seed-42 pipeline run** (74 events, 40 exceptions). Default data source until `VITE_DATA_SOURCE=live`. |
+| `src/api/types.ts` | TypeScript types for the contract (`EventRead`, `AuditRead`, `MetricsBlock`, `ByRootCause`, `ByIntervention`, `ExceptionRow`, `FraudCluster`, response wrappers). |
+| `src/api/dataSource.ts` | The adapter every page calls: `listEvents` / `getAuditTrail` / `getMetrics` / `runPipeline`. Reads `fixtures.json` by default; `VITE_DATA_SOURCE=live` routes to `client.ts` → `/api`. One env var, no component changes. |
+| `src/api/actionLabels.ts` | Plain-business-English labels for agent / status / root cause / intervention / audit action / event type. |
+| `src/api/client.ts` | fetch wrapper; now also `listEvents`, `getAuditTrail`, `getMetrics`, `runPipeline`. |
+| `src/components/*` | `AppShell` (nav + theme toggle), `Card` / `GlassCard` (frosted `backdrop-blur`), `StatTile`, `StatusPill`, `DataTable`, `ChartCard` + `HBar` (Recharts bar only), `AuditTimeline` + `PayloadViewer`, `DetailDrawer`, `Feedback` (`Skeleton` / `EmptyState` / `ErrorState`). |
+| `src/pages/*` | `Overview` (KPI tiles + 2 charts), `Queue` (at-risk table + deep-linkable `?case=` decision-trail drawer), `Recovery` (analytics), `Exceptions` (fraud-cluster alert card + honest exception table + CSV export). |
+| `src/lib/*`, `src/charts/series.ts`, `src/hooks/useAsync.ts` | `format.ts` (Indian ₹ grouping), `csv.ts`, chart series colours, async loading hook. |
+| `tsconfig.app.json` | + `resolveJsonModule` (fixtures import). `package.json` + `react-router-dom`. |
 | `tsconfig*.json`, `.oxlintrc.json`, `index.html`, `public/*` | Vite/TS defaults. |
 | `.env.example` | `VITE_API_BASE_URL=` (blank in dev). |
 
@@ -165,7 +198,28 @@ RAZORPAY BUILDATHON/
 |---|---|---|---|---|
 | GET | `/health` | `health` | `{"status":"ok"}` | done |
 | GET | `/docs`, `/redoc`, `/openapi.json` | FastAPI built-in | Swagger / ReDoc | done |
-| — | `/api/events`, `/api/pipeline/run`, `/api/metrics`, `/api/events/{id}/audit` | — | — | **planned** (routers not built) |
+| GET | `/api/events` | `routes.list_events` | `{events: EventRead[], count: int}` | **done** |
+| GET | `/api/events/{event_id}/audit` | `routes.event_audit` | `{event: EventRead, trail: AuditRead[]}` — 404 if unknown | **done** |
+| POST | `/api/pipeline/run` | `routes.pipeline_run` | `{metrics: MetricsBlock, ran_at: str}` — query params `reset`, `count`, `seed` | **done** |
+| GET | `/api/metrics` | `routes.get_metrics` | `MetricsBlock` (computed from current DB state) | **done** |
+
+`main.py` mounts `app.api.router` (prefix `/api`). `EventRead` / `AuditRead`
+serialise money as decimal strings (matches `fixtures.json`).
+
+### 5.1 Frozen API response contract (Phase A)
+
+Full shapes and the `MetricsBlock` definition live in
+`backend/app/agents/AGENTS_CONTRACT.md` §8; a realistic sample of each is
+committed at `frontend/src/api/fixtures.json` (keys `events`, `eventAudit`,
+`pipelineRun`, `metrics`). `MetricsBlock` = the plan.md §7 metric block:
+`total_at_risk`, `total_recovered`, `overall_recovery_rate`, `event_count`,
+`by_root_cause[]`, `by_intervention[]` (each carries `at_risk` + `recovered`
+decimal strings so ₹-recovered-by-intervention is available per plan.md §7),
+`avg_hours_to_recovery`, `status_breakdown{}`, `exceptions[]` (complete honest
+list — never truncated), `fraud_cluster{}`. All money fields are decimal
+strings; rates are floats 0–1. Produced by `audit.compute_metrics(session)`;
+`audit.run()` additionally writes the one `batch_metrics` audit row. Contract
+Q&A resolutions are logged in `AGENTS_CONTRACT.md` §10.
 
 ---
 
@@ -178,6 +232,7 @@ All are `enum.StrEnum` (members compare/serialize as plain strings).
 | `EventType` | `failed_payment`, `abandoned_checkout`, `overdue_invoice`, `expired_mandate` |
 | `EventStatus` | `detected` → `diagnosed` → `action_taken` → `recovered` \| `exception` \| `flagged` |
 | `Agent` | `detection`, `diagnosis`, `recovery`, `triage`, `audit` |
+| `RootCause` | `insufficient_funds`, `expired_instrument`, `bank_downtime`, `auth_failure`, `card_declined`, `checkout_abandoned`, `invoice_forgotten`, `suspected_fraud`, `unknown` — Diagnosis Agent output; one Recovery intervention each (see `backend/app/agents/AGENTS_CONTRACT.md` §2). DB column `root_cause` stays `str \| None`; the enum types `EventUpdate.root_cause`. |
 
 ---
 
@@ -222,8 +277,8 @@ Shared config `_STRICT = ConfigDict(extra="forbid", use_enum_values=True, valida
 
 | Model | Base | Role | Key rules |
 |---|---|---|---|
-| `EventCreate` | `SQLModel` | input to `insert_event`; future `POST /api/events` body | `event_id`/`customer_id` `min_length=1`; `event_type: EventType`; `amount` `gt=0`, `max_digits=14`; `currency` exactly 3 chars → upper-cased; `attempts_so_far`/`days_overdue` `ge=0`; `status: EventStatus = detected`. Validators: `_upper` (currency), `_round_money` (quantise amount to `0.01`). |
-| `EventUpdate` | `SQLModel` | partial patch for `update_event` | every field `Optional`; `extra="forbid"` rejects unknown keys; `diagnosis_confidence` `ge=0,le=1`; `recovered_amount` `ge=0`; money quantised. Consumed via `model_dump(exclude_unset=True)`. |
+| `EventCreate` | `SQLModel` | input to `insert_event`; future `POST /api/events` body | `event_id`/`customer_id` `min_length=1`; `event_type: EventType`; `amount` `gt=0`, `max_digits=14`; `currency` exactly 3 chars → upper-cased; `attempts_so_far`/`days_overdue` `ge=0`; `status: EventStatus = detected`; `created_at: datetime \| None = None` (optional backdate — the synthetic generator sets it; omitted → table default `_utcnow`). Validators: `_upper` (currency), `_round_money` (quantise amount to `0.01`). |
+| `EventUpdate` | `SQLModel` | partial patch for `update_event` | every field `Optional`; `extra="forbid"` rejects unknown keys; `root_cause: RootCause \| None` (bad value → `ValidationError`); `diagnosis_confidence` `ge=0,le=1`; `recovered_amount` `ge=0`; money quantised. Consumed via `model_dump(exclude_unset=True)`. |
 | `EventRead` | `SQLModel` | response shape for `GET /api/events` | mirrors all `events` columns. |
 | `AuditCreate` | `SQLModel` | input to `log_action` | `event_id`/`action`/`reasoning` `min_length=1`; `agent: Agent`; `payload: dict \| None`. |
 | `AuditRead` | `SQLModel` | response shape for audit endpoints | mirrors all `audit_log` columns. |
@@ -241,7 +296,7 @@ Shared config `_STRICT = ConfigDict(extra="forbid", use_enum_values=True, valida
 | `get_session(database_url=None)` | | `Session` | new unit-of-work |
 | `init_db(database_url=None)` | | `None` | `SQLModel.metadata.create_all` — idempotent |
 | `reset_db(database_url=None)` | | `None` | `drop_all` + `create_all` — fresh slate |
-| `insert_event(session, data=None, /, **kwargs)` | `data: EventCreate \| None` | `Event` | validates via `EventCreate` (pre-built or from kwargs), `add`+`commit`+`refresh` |
+| `insert_event(session, data=None, /, **kwargs)` | `data: EventCreate \| None` | `Event` | validates via `EventCreate` (pre-built or from kwargs), `add`+`commit`+`refresh`. If `created_at` is supplied it is honoured and `updated_at` is set to match; otherwise both fall to the table default. |
 | `update_event(session, event_id, data=None, /, **fields)` | `data: EventUpdate \| None` | `Event` | `model_dump(exclude_unset=True)` → `setattr` each; bumps `updated_at`; missing event → `KeyError`; unknown key / bad value → `ValidationError` |
 | `get_event(session, event_id)` | | `Event \| None` | by PK |
 | `get_events_by_status(session, status)` | `status: str \| Iterable[str]` | `list[Event]` | `WHERE status IN (...)`, ordered by `created_at` |
@@ -260,13 +315,16 @@ Module constants: `DEFAULT_DATABASE_URL`, `MONEY = Decimal("0.01")`.
 
 | Name | Value / meaning |
 |---|---|
-| `RAZORPAY_FAILURE_REASONS` | `dict[EventType, list[str\|None]]` — real Razorpay error codes: `insufficient_funds`, `card_expired`, `incorrect_otp`, `card_declined`, `bank_not_available`, `bank_technical_error`, `gateway_technical_error` (failed_payment); `mandate_creation_expired/failed` (expired_mandate); `None` for abandoned_checkout & overdue_invoice |
+| `RAZORPAY_FAILURE_REASONS` | `dict[EventType, list[str\|None]]` — real Razorpay test-mode failed-card-payment codes (verified 2026-09-03 against `razorpay.com/docs/payments/payments/test-card-details`): `insufficient_fund`, `card_expired`, `authentication_failed`, `payment_timed_out`, `card_declined`, `card_number_invalid`, `bank_not_available`, `gateway_technical_error` (failed_payment); `mandate_creation_expired/failed` (expired_mandate); `None` for abandoned_checkout & overdue_invoice |
 | `_TYPE_WEIGHTS` | 45 % failed_payment, 20 % abandoned_checkout, 20 % overdue_invoice, 15 % expired_mandate |
 | `_MIN_AMOUNT` / `_MAX_AMOUNT` | `₹200` / `₹50000` |
 | `CSV_PATH` | `backend/data/synthetic_events.csv` |
 | `FRAUD_REASON` | `card_declined` |
 | `FRAUD_AMOUNT_LOW` / `_HIGH` | `₹4980` / `₹5020` |
 | `FRAUD_ID_PREFIX` | `fraud_` |
+| `BATCH_SPAN_DAYS` | `14` — batch `created_at` is backdated/spread over this window (gives the Diagnosis fraud check a real time axis) |
+| `FRAUD_WINDOW_MINUTES` | `40` — the seeded fraud cluster falls inside one sub-60-minute window |
+| `FRAUD_DAYS_AGO` | `3` — where in the span the cluster sits |
 
 **Functions**
 
@@ -275,8 +333,9 @@ Module constants: `DEFAULT_DATABASE_URL`, `MONEY = Decimal("0.01")`.
 | `_money(value)` | `float -> Decimal` | 2-dp Decimal via `str()` (avoids float-binary expansion that breaks `max_digits`) |
 | `_rupees(rng)` | `random.Random -> Decimal` | log-normal amount, clamped to [200, 50000] |
 | `_pick_type(rng)` | `-> EventType` | weighted choice |
-| `build_batch(count=70, seed=42)` | `-> list[EventCreate]` | deterministic; each record is a validated `EventCreate`; `event_id = evt_NNN` |
-| `build_fraud_cluster(size=4, seed=42)` | `-> list[EventCreate]` | all `failed_payment`, same `card_declined` reason, amounts in a ±₹40 band, `attempts_so_far` 2–3, distinct customers, `event_id = fraud_NN` |
+| `_epoch()` | `-> datetime` | tz-aware "now" the backdating span ends at; taken once per build |
+| `build_batch(count=70, seed=42)` | `-> list[EventCreate]` | deterministic (ids/amounts/types); each record a validated `EventCreate`; `event_id = evt_NNN`; `created_at` spread over `BATCH_SPAN_DAYS` |
+| `build_fraud_cluster(size=4, seed=42)` | `-> list[EventCreate]` | all `failed_payment`, same `card_declined` reason, amounts in a ±₹40 band, `attempts_so_far` 2–3, distinct customers, all `created_at` inside one `FRAUD_WINDOW_MINUTES` window ~`FRAUD_DAYS_AGO` back, `event_id = fraud_NN` |
 | `_to_frame(records)` | `-> pandas.DataFrame` | one row per record (`model_dump`) |
 | `generate(count=70, seed=42, reset=True, database_url=None)` | `-> list[str]` | build batch + cluster, optional `reset_db`, `insert_event` each, write CSV, return event_ids |
 | `_summary(records)` | `-> str` | count-by-type + total ₹ + fraud ids |
@@ -305,7 +364,9 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 | Create local env | `cp .env.example .env` | `backend/` |
 | Init schema manually | `uv run python -m app.db.store` | `backend/` |
 | Seed synthetic batch | `uv run python -m app.data.generate --reset` | `backend/` |
+| Run the full pipeline | `uv run python -m app.pipeline --reset` (add `--json` for the raw MetricsBlock) | `backend/` |
 | Run API (dev) | `uv run uvicorn app.main:app --reload` → `:8000/docs` | `backend/` |
+| Dashboard against live API | set `VITE_DATA_SOURCE=live` in `frontend/.env`, run backend + `npm run dev` | `frontend/` |
 | Run tests | `uv run pytest -q` | `backend/` |
 | Install frontend deps | `npm install` | `frontend/` |
 | Run frontend (dev) | `npm run dev` → `:5173` | `frontend/` |
@@ -317,12 +378,19 @@ Example output: `74 events, total at risk Rs 199,558.65` + per-type counts +
 
 | Suite | Count | Needs Postgres | Covers |
 |---|---|---|---|
-| `test_store.py` — DDL & CRUD | 13 | yes (skip if down) | tables exist, insert/read defaults, update lifecycle + `updated_at`, status queries (single/multi), audit trail + JSONB round-trip, FK enforcement, `reset_db` |
+| `test_store.py` — DDL & CRUD | 15 | yes (skip if down) | tables exist, insert/read defaults, update lifecycle + `updated_at`, backdated `created_at` insert, `RootCause` enum enforcement on `update_event`, status queries (single/multi), audit trail + JSONB round-trip, FK enforcement, `reset_db` |
 | `test_store.py` — schema layer | 5 | no | `EventCreate` bounds & rejections, normalisation (currency upper, money quantise, enum→str), `EventUpdate` `extra="forbid"` + confidence bound, `AuditCreate` non-empty reasoning, prebuilt-schema path |
-| `test_generate.py` | 7 | 1 of 7 | size/coverage, validity, amount & days_overdue bounds, no-gateway-reason invariant, determinism, fraud-cluster signature, DB seeding |
+| `test_generate.py` | 9 | 1 of 9 | size/coverage, validity, amount & days_overdue bounds, no-gateway-reason invariant, `created_at` spread over the span, fraud cluster inside one sub-60-min window, determinism, fraud-cluster signature, DB seeding |
+| `test_detection.py` | 12 | yes | `classify` verdict table, flag vs route-to-exception, net `amount_at_risk`, idempotency, only-touches-detected |
+| `test_diagnosis.py` | 26 | yes | rules map (12 params), event-type fallback, low-confidence → Claude (monkeypatched), no-key degrade, fraud-cluster flag + signature, ordinary same-reason not flagged, idempotency |
+| `test_recovery.py` | 29 | yes | per-intervention routes (7 params), salary-window retry, bank backoff, max-attempts halt, escalation cap (never stage 4), human-approval gate (executed vs not, boundary), cooldown delay, suspected-fraud refusal, never-reads-flagged, template + Claude draft, idempotency |
+| `test_audit.py` | 11 | yes (dedicated `revrec_test_aud`) | totals + money-based overall rate, all-six status keys, by-root-cause enum order, by-intervention `at_risk`/`recovered`, avg hours, complete exception list + all reason-derivation paths, fraud cluster, determinism, one `batch_metrics` row, no event mutation, empty batch |
+| `test_pipeline.py` | 6 | yes | reset→generate→run: every event terminal, fraud cluster `flagged` + not recovered, metrics over full batch, exception list populated with reasons, rerunnable/stable, `batch_metrics` row written |
 
-Current run against the local Postgres: **25 passed** (`uv run pytest -q` from
-`backend/`). With Postgres stopped: 10 passed, 15 skipped.
+Current run against the local Postgres: **113 passed** (`uv run pytest -q` from
+`backend/`; run in chunks on low-RAM boxes — the full suite plus the
+batch-reseeding pipeline tests can OOM a single process). With Postgres
+stopped: ~15 passed, the rest skipped.
 
 ---
 
@@ -332,12 +400,12 @@ Current run against the local Postgres: **25 passed** (`uv run pytest -q` from
 |---|---|---|
 | 1 | `store.py` shared event store | ✅ done (SQLModel + Pydantic on Postgres) |
 | 2 | synthetic data generator | ✅ done (`app/data/generate.py`) |
-| 3 | `agents/detection.py` | ⬜ next |
-| 4 | `agents/diagnosis.py` (+ fraud triage) | ⬜ |
-| 5 | `agents/recovery.py` (+ stopping rules) | ⬜ |
-| 6 | `agents/audit.py` (metrics) | ⬜ |
-| 7 | `pipeline.py` (single entrypoint) | ⬜ |
-| 8 | dashboard | ⬜ (React frontend — shell only) |
+| 3 | `agents/detection.py` | ✅ done (12 tests) |
+| 4 | `agents/diagnosis.py` (+ fraud triage) | ✅ done (26 tests) |
+| 5 | `agents/recovery.py` (+ stopping rules) | ✅ done (29 tests) |
+| 6 | `agents/audit.py` (metrics) | ✅ done (11 tests) |
+| 7 | `pipeline.py` (single entrypoint) | ✅ done (`app/pipeline.py` + 6 integration tests) |
+| 8 | dashboard | 🟡 built against fixtures (`frontend/src/pages/*`), + `app/api/*` live; browser end-to-end pass pending |
 | 9 | `webhooks/listener.py` | ⬜ (stretch) |
 | 10 | `README.md` + `architecture.md` "what broke" | 🟡 architecture.md started |
 
