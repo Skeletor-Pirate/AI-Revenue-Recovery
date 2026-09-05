@@ -28,9 +28,10 @@ from fastapi import APIRouter, Header, HTTPException, Request
 
 from datetime import datetime, timezone
 
+from app.agents import payment as payment_agent
 from app.config import get_settings
 from app.db import store
-from app.db.store import EventCreate, EventType
+from app.db.store import EventCreate, EventType, PaymentLinkStatus
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -52,6 +53,50 @@ SUCCESS_EVENTS = {
     "payment.captured", "payment.authorized", "order.paid", "payment_link.paid",
     "subscription.charged", "invoice.paid", "refund.processed",
 }
+
+# Capture confirmations we DO act on (payment-capture engine, AGENTS_CONTRACT.md
+# §11 P6) -- entity-key convention mirrors AT_RISK_EVENTS: `payment.captured`'s
+# entity lives under payload.payment.entity (Razorpay copies the link's `notes`
+# onto the resulting payment object too), `payment_link.paid`'s under
+# payload.payment_link.entity (matching payment_link.expired's existing shape).
+CAPTURE_EVENTS: dict[str, str] = {
+    "payment.captured": "payment",
+    "payment_link.paid": "payment_link",
+}
+
+
+def _capture_event_id(entity: dict[str, Any]) -> str | None:
+    """entity.notes.event_id, fallback entity.reference_id."""
+    notes = entity.get("notes")
+    if isinstance(notes, dict) and notes.get("event_id"):
+        return str(notes["event_id"])
+    ref = entity.get("reference_id")
+    return str(ref) if ref else None
+
+
+def _handle_capture_webhook(event: dict[str, Any], name: str) -> dict[str, Any]:
+    entity = _entity(event, CAPTURE_EVENTS[name])
+    event_id = _capture_event_id(entity)
+    if not event_id:
+        return {"status": "ignored", "event": name, "reason": "no event_id in notes/reference_id"}
+
+    with store.get_session() as session:
+        target = store.get_event(session, event_id)
+        if target is None:
+            return {"status": "ignored", "event": name, "reason": "unmatched event_id",
+                     "event_id": event_id}
+        if target.payment_link_status == PaymentLinkStatus.CAPTURED:
+            # Idempotent against webhook redelivery.
+            return {"status": "ignored", "event": name, "reason": "already captured",
+                     "event_id": event_id}
+
+        amount = Decimal(str(target.amount)).quantize(Decimal("0.01"))
+        capture: dict[str, Any] = {
+            "captured": True, "reason": "captured", "amount": amount,
+        }
+        payment_agent.apply_capture(session, target, capture, source="razorpay_webhook")
+
+    return {"status": "captured", "event": name, "event_id": event_id}
 
 
 def verify_signature(body: bytes, signature: str | None, secret: str) -> bool:
@@ -178,6 +223,9 @@ async def razorpay_webhook(
 
     event = await request.json()
     name = event.get("event", "")
+
+    if name in CAPTURE_EVENTS:
+        return _handle_capture_webhook(event, name)
 
     record = razorpay_event_to_eventcreate(event)
     if record is None:

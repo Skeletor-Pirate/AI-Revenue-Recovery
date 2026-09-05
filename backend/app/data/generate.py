@@ -125,23 +125,33 @@ def _pick_type(rng: random.Random) -> EventType:
 _UPI_HANDLES = ["okhdfcbank", "ybl", "oksbi", "paytm", "ibl", "axl"]
 
 
-def _fake_contact(fake: Faker, rng: random.Random) -> dict[str, str]:
-    """A synthetic name + phone + bank account + UPI VPA for one customer.
+def _fake_contact(fake: Faker, rng: random.Random, amount: Decimal) -> dict[str, str]:
+    """A synthetic name + phone + bank account + UPI VPA + fake bank balance
+    for one customer.
 
     Entirely invented (see module docstring / _UPI_HANDLES comment above) --
     good enough to make a case read like a real record and to give the
     Playground / Simulate feature a persona to role-play against.
+
+    `customer_fake_balance` feeds the deterministic fake-gateway capture check
+    in `app/agents/payment.py`: `resolve_fake_capture` forces
+    `insufficient_funds` whenever the balance is below the amount, regardless
+    of the root-cause success-rate roll. ~80% of customers have enough.
     """
     name = fake.name()
     phone = f"+91{rng.choice('6789')}{rng.randint(10**8, 10**9 - 1)}"
     bank_account = str(fake.unique.random_number(digits=14, fix_len=True))
     slug = name.lower().replace(" ", "").replace(".", "")[:12]
     vpa = f"{slug}@{rng.choice(_UPI_HANDLES)}"
+    has_funds = rng.random() < 0.8
+    factor = rng.uniform(1.05, 3.0) if has_funds else rng.uniform(0.1, 0.95)
+    balance = _money(float(amount) * factor)
     return {
         "customer_name": name,
         "customer_phone": phone,
         "customer_bank_account": bank_account,
         "customer_upi_vpa": vpa,
+        "customer_fake_balance": balance,
     }
 
 
@@ -167,13 +177,14 @@ def build_batch(count: int = 70, seed: int = 42) -> list[EventCreate]:
             rng.randint(1, 90) if etype is EventType.OVERDUE_INVOICE else 0
         )
         created_at = span_start + timedelta(seconds=rng.uniform(0, span_seconds))
+        amount = _rupees(rng)
         batch.append(
             EventCreate(
                 event_id=f"evt_{i:03d}",
                 event_type=etype,
                 customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
-                **_fake_contact(fake, rng),
-                amount=_rupees(rng),
+                **_fake_contact(fake, rng, amount),
+                amount=amount,
                 raw_failure_reason=reason,
                 attempts_so_far=attempts,
                 days_overdue=days_overdue,
@@ -194,22 +205,25 @@ def build_fraud_cluster(size: int = 4, seed: int = 42) -> list[EventCreate]:
 
     low, high = float(FRAUD_AMOUNT_LOW), float(FRAUD_AMOUNT_HIGH)
     cluster_start = _epoch() - timedelta(days=FRAUD_DAYS_AGO)
-    return [
-        EventCreate(
-            event_id=f"{FRAUD_ID_PREFIX}{i:02d}",
-            event_type=EventType.FAILED_PAYMENT,
-            customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
-            **_fake_contact(fake, rng),
-            amount=_money(rng.uniform(low, high)),
-            raw_failure_reason=FRAUD_REASON,
-            attempts_so_far=rng.randint(2, 3),   # already retried hard
-            days_overdue=0,
-            # all members inside one tight (< 60 min) window
-            created_at=cluster_start
-            + timedelta(minutes=rng.uniform(0, FRAUD_WINDOW_MINUTES)),
+    records = []
+    for i in range(size):
+        amount = _money(rng.uniform(low, high))
+        records.append(
+            EventCreate(
+                event_id=f"{FRAUD_ID_PREFIX}{i:02d}",
+                event_type=EventType.FAILED_PAYMENT,
+                customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
+                **_fake_contact(fake, rng, amount),
+                amount=amount,
+                raw_failure_reason=FRAUD_REASON,
+                attempts_so_far=rng.randint(2, 3),   # already retried hard
+                days_overdue=0,
+                # all members inside one tight (< 60 min) window
+                created_at=cluster_start
+                + timedelta(minutes=rng.uniform(0, FRAUD_WINDOW_MINUTES)),
+            )
         )
-        for i in range(size)
-    ]
+    return records
 
 
 def build_silent_failures(
@@ -229,20 +243,23 @@ def build_silent_failures(
 
     span_start = _epoch() - timedelta(days=BATCH_SPAN_DAYS)
     span_seconds = BATCH_SPAN_DAYS * 24 * 3600
-    return [
-        EventCreate(
-            event_id=f"{SILENT_ID_PREFIX}{i:02d}",
-            event_type=EventType.FAILED_PAYMENT,
-            customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
-            **_fake_contact(fake, rng),
-            amount=_rupees(rng),
-            raw_failure_reason=None,          # the whole point
-            attempts_so_far=rng.randint(1, 2),
-            days_overdue=0,
-            created_at=span_start + timedelta(seconds=rng.uniform(0, span_seconds)),
+    records = []
+    for i in range(size):
+        amount = _rupees(rng)
+        records.append(
+            EventCreate(
+                event_id=f"{SILENT_ID_PREFIX}{i:02d}",
+                event_type=EventType.FAILED_PAYMENT,
+                customer_id=f"cust_{fake.unique.random_number(digits=6, fix_len=True)}",
+                **_fake_contact(fake, rng, amount),
+                amount=amount,
+                raw_failure_reason=None,          # the whole point
+                attempts_so_far=rng.randint(1, 2),
+                days_overdue=0,
+                created_at=span_start + timedelta(seconds=rng.uniform(0, span_seconds)),
+            )
         )
-        for i in range(size)
-    ]
+    return records
 
 
 def _to_frame(records: list[EventCreate]) -> pd.DataFrame:

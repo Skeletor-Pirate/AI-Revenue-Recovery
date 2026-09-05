@@ -56,6 +56,30 @@ def test_database_url() -> str:
 
 
 @pytest.fixture(autouse=True)
+def _no_real_razorpay(monkeypatch):
+    """Tests never create a real Razorpay Payment Link, even when a
+    developer's local `.env` has real test-mode keys configured (useful for
+    hand-testing the webhook listener / `/pay/:token` against a real Razorpay
+    test account). Without this, every full-pipeline test run would call the
+    real Payment Links API for each diagnosed event, burn Razorpay's 30-link
+    test-mode quota, and leave most events non-terminal
+    (`payment_link_status=AWAITING_CAPTURE`), breaking
+    `test_every_event_reaches_a_terminal_status` and friends. Same isolation
+    posture as `_offline_embeddings` below. Individual tests that want to
+    exercise the real-Razorpay code path build their own settings object
+    directly (see `tests/test_payment.py`) rather than relying on
+    `get_settings()`, so they are unaffected by this.
+    """
+    monkeypatch.delenv("RAZORPAY_KEY_ID", raising=False)
+    monkeypatch.delenv("RAZORPAY_KEY_SECRET", raising=False)
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _offline_embeddings(monkeypatch):
     """Never hit a real embedding model in tests.
 

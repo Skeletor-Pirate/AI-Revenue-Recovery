@@ -24,9 +24,26 @@ Guardrails (AGENTS_CONTRACT.md §4 / §10) are enforced by the handlers:
   amount strictly above the threshold is logged as ``awaiting_human_approval``
   and **not executed**
 
-"Recovered" is decided by a deterministic per-event rule (``_stable_hash``), not
-randomness, so the demo is stable. Nothing sleeps — every timestamp is an offset
-from ``event.updated_at``.
+**"Recovered" is gated on a real payment capture (AGENTS_CONTRACT.md §11),
+never a bare coin flip or a conversation outcome.** Every intervention that
+reaches ``_resolve_outcome`` sends a payment link via
+``app.agents.payment.create_payment_link`` — a real Razorpay test-mode link
+when ``RAZORPAY_KEY_ID``/``SECRET`` are configured, else a deterministic fake
+one — and stamps it onto the event (``payment_link_id/url/status=
+AWAITING_CAPTURE``). A **real** link genuinely waits for an async webhook
+(``app/webhooks/listener.py``) to call ``payment.apply_capture``; the event
+stays ``action_taken``/``AWAITING_CAPTURE`` until then, which is honest, not a
+bug, if this is an offline demo run. A **fake** link has no live human to
+click it in a batch run, so ``_resolve_outcome`` immediately calls
+``payment.resolve_fake_capture`` + ``payment.apply_capture`` inline —
+explicitly modeled as "the gateway resolves for the synthetic customer," the
+only place ``Event.status`` becomes ``RECOVERED`` from a capture. This
+replaces the previous per-event ``_stable_hash`` coin flip that set
+``RECOVERED`` directly with no capture behind it at all (see plan.md's
+2026-09-05 "payment-capture integrity fix" entry). ``_stable_hash`` /
+``SUCCESS_RATES`` still live here — ``payment.py`` imports them (never
+duplicates) for its own deterministic capture roll. Nothing sleeps — every
+timestamp is an offset from ``event.updated_at``.
 
 Persistence goes only through ``app.db.store``. Claude is used only to draft
 outreach copy and is isolated behind ``_claude_draft`` (monkeypatched in tests);
@@ -35,19 +52,24 @@ with no API key the deterministic templates are used instead.
 Public API:
     run(session, *, settings=None) -> list[str]              # every event_id examined
     draft_outreach(intervention, event, *, settings) -> str  # never raises
-    _stable_hash(event_id) -> int                            # deterministic outcome
+    _stable_hash(event_id) -> int                            # imported by app.agents.payment
 """
 
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
 from app import llm
 from app.db import store
-from app.db.store import Agent, EventStatus, MONEY
+from app.db.store import Agent, EventStatus, MONEY, PaymentLinkStatus
+
+# NOTE: `app.agents.payment` is imported lazily inside `_resolve_outcome`
+# (not at module level) -- it imports `SUCCESS_RATES`/`_stable_hash` FROM this
+# module, so a top-level `import payment` here would be a circular import at
+# load time.
 
 RECOVERY = Agent.RECOVERY
 
@@ -91,8 +113,6 @@ INTERVENTIONS: dict[str, str] = {
 }
 
 STAGE_NAMES = {1: "reminder", 2: "formal_notice", 3: "human_handoff"}
-
-_NO_RESPONSE = "intervention exhausted, no response"
 
 
 # --- small pure helpers -------------------------------------------------
@@ -274,15 +294,69 @@ def _await_approval(session: store.Session, event: Any, *, proposed_action: str)
     store.update_event(session, event.event_id, status=EventStatus.EXCEPTION)
 
 
-def _resolve_outcome(session: store.Session, event: Any, rc: str) -> None:
-    """Deterministic recovered / exception decision (AGENTS_CONTRACT.md §7)."""
-    p = SUCCESS_RATES[rc]
-    if (_stable_hash(event.event_id) % 100) < p:
-        amount = _q(event.amount)
-        store.update_event(
-            session, event.event_id,
-            status=EventStatus.RECOVERED, recovered_amount=amount,
-        )
+def _resolve_outcome(
+    session: store.Session, event: Any, rc: str, settings: Any = None,
+) -> None:
+    """Payment-capture-gated recovered / exception decision
+    (AGENTS_CONTRACT.md §11) — replaces the old ``_stable_hash`` coin flip.
+    ``Event.status`` becomes ``RECOVERED`` only via ``payment.apply_capture``,
+    never directly here.
+
+    Sends a payment link (real Razorpay test-mode when configured, else a
+    deterministic fake one) and stamps it onto the event. A real link stays
+    ``action_taken``/``AWAITING_CAPTURE`` — it genuinely waits for an async
+    webhook. A fake link has no live human to click it in a batch run, so it
+    resolves synchronously right here (explicitly modeled as "the gateway
+    resolves for the synthetic customer").
+    """
+    from app.agents import payment  # lazy: avoids a circular import (payment
+    # imports SUCCESS_RATES/_stable_hash from this module at load time)
+
+    link = payment.create_payment_link(session, event, settings=settings)
+    store.update_event(
+        session, event.event_id,
+        payment_link_id=link["link_id"],
+        payment_link_url=link["link_url"],
+        payment_link_status=PaymentLinkStatus.AWAITING_CAPTURE,
+        payment_link_sent_at=datetime.now(timezone.utc),
+    )
+    store.log_action(
+        session,
+        event_id=event.event_id,
+        agent=RECOVERY,
+        action="payment_link_sent",
+        reasoning=(
+            f"Sent a {link['source']} payment link to customer "
+            f"{event.customer_id} for {_q(event.amount)} via the "
+            f"{INTERVENTIONS[rc]} intervention."
+        ),
+        payload={
+            "link_id": link["link_id"],
+            "link_url": link["link_url"],
+            "source": link["source"],
+        },
+    )
+
+    if link["source"] != "fake_gateway":
+        # A real Razorpay link genuinely waits for an async webhook
+        # (app/webhooks/listener.py calls payment.apply_capture when it
+        # arrives). Staying action_taken/AWAITING_CAPTURE here is the honest
+        # state for an offline demo run where no webhook ever fires.
+        return
+
+    refreshed = store.get_event(session, event.event_id) or event
+    capture = payment.resolve_fake_capture(
+        refreshed, link["link_id"], settings=settings, attempt=1,
+    )
+    payment.apply_capture(session, refreshed, capture, source="fake_gateway")
+
+    if capture["captured"]:
+        amount = _q(capture["amount"])
+        # `apply_capture` already set status=RECOVERED and logged
+        # `payment_captured` — this is a metrics-facing echo only, kept
+        # because `audit.compute_metrics`'s `avg_hours_to_recovery` reads
+        # this specific action/payload key (AGENTS_CONTRACT.md §11 dual-log
+        # note), never a second status write.
         store.log_action(
             session,
             event_id=event.event_id,
@@ -299,6 +373,9 @@ def _resolve_outcome(session: store.Session, event: Any, rc: str) -> None:
             },
         )
     else:
+        # `apply_capture` already logged `payment_capture_failed` with the
+        # gateway's own reason; Recovery still owns the status decision on a
+        # failed capture (exception vs. a future bounded retry).
         store.update_event(session, event.event_id, status=EventStatus.EXCEPTION)
         store.log_action(
             session,
@@ -307,9 +384,10 @@ def _resolve_outcome(session: store.Session, event: Any, rc: str) -> None:
             action="routed_to_exception",
             reasoning=(
                 f"The {INTERVENTIONS[rc]} intervention for customer "
-                f"{event.customer_id} got no response; giving up honestly."
+                f"{event.customer_id} failed to capture payment "
+                f"({capture['reason']}); giving up honestly."
             ),
-            payload={"reason": _NO_RESPONSE},
+            payload={"reason": capture["reason"]},
         )
 
 
@@ -317,7 +395,7 @@ def _resolve_outcome(session: store.Session, event: Any, rc: str) -> None:
 
 def _handle_retry(
     session: store.Session, event: Any, rc: str, anchor: datetime,
-    cust_map: dict[str, str],
+    cust_map: dict[str, str], settings: Any = None,
 ) -> None:
     if event.attempts_so_far >= MAX_RETRY_ATTEMPTS:
         _halt(session, event, "max_retry_attempts")
@@ -341,7 +419,7 @@ def _handle_retry(
         payload={"retry_at": retry_at.isoformat(), "attempt": attempt},
     )
     store.update_event(session, event.event_id, attempts_so_far=attempt)
-    _resolve_outcome(session, event, rc)
+    _resolve_outcome(session, event, rc, settings)
 
 
 def _handle_outreach(
@@ -373,7 +451,7 @@ def _handle_outreach(
     store.update_event(
         session, event.event_id, attempts_so_far=event.attempts_so_far + 1
     )
-    _resolve_outcome(session, event, rc)
+    _resolve_outcome(session, event, rc, settings)
 
 
 def _handle_nudge(
@@ -409,7 +487,7 @@ def _handle_nudge(
             proposed_action="bounded discount offer on abandoned checkout",
         )
         return
-    _resolve_outcome(session, event, "checkout_abandoned")
+    _resolve_outcome(session, event, "checkout_abandoned", settings)
 
 
 def _handle_escalation(
@@ -461,7 +539,7 @@ def _handle_escalation(
             payload={"reason": "escalated to human handoff, automated recovery stops"},
         )
         return
-    _resolve_outcome(session, event, "invoice_forgotten")
+    _resolve_outcome(session, event, "invoice_forgotten", settings)
 
 
 # --- per-event orchestration --------------------------------------
@@ -544,7 +622,7 @@ def _process_event(
     )
 
     if rc in ("insufficient_funds", "card_declined"):
-        _handle_retry(session, event, rc, anchor, cust_map)
+        _handle_retry(session, event, rc, anchor, cust_map, settings)
     elif rc in ("expired_instrument", "bank_downtime", "auth_failure"):
         _handle_outreach(session, event, rc, anchor, settings, cust_map)
     elif rc == "checkout_abandoned":

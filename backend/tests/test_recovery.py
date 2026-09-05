@@ -62,7 +62,16 @@ def _row(session, event_id, action):
 
 
 def _expect_recovered(event_id, rc):
-    return (recovery._stable_hash(event_id) % 100) < recovery.SUCCESS_RATES[rc]
+    """Mirrors `payment.resolve_fake_capture`'s exact deterministic formula
+    (AGENTS_CONTRACT.md §11/§13 P5): the salt is
+    f"{event_id}:{link_id}:{attempt}", not just `event_id` -- `_resolve_outcome`
+    always calls the fake gateway with `link_id=f"fake_{event_id}"` and
+    `attempt=1` when no Razorpay keys are configured (the default test
+    settings=None path, forced by the `_no_real_razorpay` conftest fixture).
+    """
+    link_id = f"fake_{event_id}"
+    salt = f"{event_id}:{link_id}:1"
+    return (recovery._stable_hash(salt) % 100) < recovery.SUCCESS_RATES[rc]
 
 
 # --- module constants -------------------------------------------------

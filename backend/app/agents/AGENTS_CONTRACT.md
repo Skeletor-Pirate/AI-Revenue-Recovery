@@ -1,8 +1,19 @@
 # AGENTS_CONTRACT.md — frozen cross-agent contract
 
-Last updated: 2026-09-04 — owner amendment (not a builder change): added the
-Triage agent, the `tickets` table, and the three human-review endpoints. See
-"Human Review Triage" below.
+Last updated: 2026-09-05 — owner amendment (Phase B0 plan-review): resolved
+payment-engine-builder's P5-P8 and simulation-engine-builder's S4-S7 contract
+questions from their plan-only pass — most notably **P5, a real bug catch**:
+`resolve_fake_capture` needed an `attempt` salt or a bounded `/pay/:token`
+retry would replay the identical failure forever. See §11/§12/§13.
+
+Previously (2026-09-05, same day): added the
+unified payment-capture engine (`app/agents/payment.py`, §11), the
+`PaymentLinkStatus` vocabulary, six new `Event` columns, and the Playground
+`sim_state` contract (§12). See "Payment-capture engine" and "Playground
+sim_state" below.
+
+Previously (2026-09-04): added the Triage agent, the `tickets` table, and the
+three human-review endpoints. See "Human Review Triage" below.
 
 This file is the single source of truth every stage builder follows. The
 team-lead owns it; builders **never edit it** — raise a "contract question" in
@@ -24,7 +35,7 @@ Money is `Decimal`, quantised to paise (`store.MONEY`). Test mode only.
 |---|---|---|---|---|
 | **Detection** (`detection.py`) | `get_events_by_status("detected")` | `get_events_by_status`, `update_event`, `log_action` | stays `detected` (at-risk, confirmed) **or** `exception` (obvious non-recoverable) | exactly one per event: `flagged_at_risk` or `routed_to_exception` |
 | **Diagnosis** (`diagnosis.py`) | `get_events_by_status("detected")` | `get_events_by_status`, `all_events` (for cluster scan), `update_event`, `log_action` | `diagnosed` (+ `root_cause`, `diagnosis_confidence`) **or** `flagged` (triage: `root_cause="suspected_fraud"`) | one per event: `classified_root_cause` or `llm_classified_root_cause`; plus `halted_fraud_cluster` for each clustered event |
-| **Recovery** (`recovery.py`) | `get_events_by_status("diagnosed")` | `get_events_by_status`, `update_event`, `log_action` | `action_taken` → then `recovered` **or** `exception`; refuses `flagged` (never reads it) | `intervention_selected` (always), then one or more action rows (below), then `marked_recovered` / `halted_stopping_rule` / `routed_to_exception` |
+| **Recovery** (`recovery.py`) | `get_events_by_status("diagnosed")` | `get_events_by_status`, `update_event`, `log_action`, `payment.create_payment_link`, `payment.resolve_fake_capture`, `payment.apply_capture` (§11) | `action_taken` → `payment_link_sent` (`payment_link_status=AWAITING_CAPTURE`); fake gateway resolves synchronously → `recovered` (via `apply_capture`) or `exception`; a real Razorpay link stays `action_taken`/`AWAITING_CAPTURE` until an async webhook confirms it; refuses `flagged` (never reads it) | `intervention_selected` (always), then one or more action rows (below), `payment_link_sent`, then `payment_captured`/`marked_recovered` or `payment_capture_failed`/`halted_stopping_rule`/`routed_to_exception` |
 | **Triage** (`triage.py`) | `get_events_by_status(["flagged","exception"])` | `tickets_for_event`, `get_audit_trail`, `insert_ticket`, `log_action` | **writes no event rows on `run()`** — opens tickets only | one `opened_review_ticket` row per new ticket (`agent="triage"`) |
 | **Audit** (`audit.py`) | `all_events`, `get_audit_trail` | `all_events`, `get_audit_trail`, `log_action` | **writes no event rows** | one `batch_metrics` row (`agent="audit"`, `event_id` = `all_events(session)[0].event_id`, the earliest event) |
 
@@ -47,7 +58,14 @@ it re-affirms genuine risk and diverts obvious non-recoverables (amount ≤ 0 af
 rules, unsupported `event_type`, `recovered_amount` already ≥ `amount`).
 
 Terminal statuses: `recovered`, `exception`, `flagged`. The pipeline asserts
-every event is terminal at the end.
+every event is terminal at the end **except** an event whose
+`payment_link_status=AWAITING_CAPTURE` from a *real* Razorpay link (§11) —
+that one genuinely waits on an async webhook that may never arrive in an
+offline demo run, and staying `action_taken` is the honest state, not a bug.
+`test_pipeline.py`'s terminal-status assertion is scoped to exclude this case
+(only reachable when `RAZORPAY_KEY_ID`/`SECRET` are configured — the default
+demo run never produces it, since the fake-gateway path always resolves
+synchronously).
 
 ---
 
@@ -95,7 +113,10 @@ Audit aggregates on these; a typo silently breaks a metric.
 | recovery | `escalation_stage_advanced` | invoice escalation moved one stage |
 | recovery | `awaiting_human_approval` | action above `HUMAN_APPROVAL_THRESHOLD_INR` — flagged, NOT executed |
 | recovery | `halted_stopping_rule` | a stopping rule stopped further action → `exception` |
-| recovery | `marked_recovered` | money clawed back → `recovered` |
+| recovery | `payment_link_sent` | `create_payment_link` result stamped on the event (`payment_link_id/url/status=AWAITING_CAPTURE/sent_at`) |
+| recovery | `payment_captured` | written by `payment.apply_capture` on a successful capture (agent is always `recovery` regardless of trigger — webhook, fake gateway, or `/pay/:token`) → `recovered` |
+| recovery | `payment_capture_failed` | written by `payment.apply_capture` on a failed capture attempt; `Event.status` untouched, caller decides next step |
+| recovery | `marked_recovered` | **kept for audit.py backward-compat** (its `avg_hours_to_recovery` calc reads this action's `simulated_hours_to_recovery` payload) — logged by `recovery.py` immediately after a successful `apply_capture` on the fake-gateway (synchronous) path only; money clawed back → `recovered` was already set by `apply_capture`, this is the metrics-facing echo, never a second status write |
 | recovery | `routed_to_exception` | gave up with a stated reason → `exception` |
 | triage | `opened_review_ticket` | pipeline step: a terminal `flagged`/`exception` event with no existing ticket gets one |
 | human | `assigned_review_ticket` | an employee took an `open` ticket (→ `under_review`) |
@@ -221,6 +242,9 @@ The generator seeds exactly one such cluster as `event_id = fraud_NN`.
 | `escalation_stage_advanced` | `{stage: int, stage_name: str, message: str, contact_at: str(ISO)}` |
 | `awaiting_human_approval` | `{amount: str, threshold: str, proposed_action: str}` |
 | `halted_stopping_rule` | `{rule: str, attempts_so_far: int}` |
+| `payment_link_sent` | `{link_id: str, link_url: str, source: "razorpay"\|"fake_gateway"}` |
+| `payment_captured` | `{recovered_amount: str, source: "razorpay_webhook"\|"fake_gateway", link_id: str}` |
+| `payment_capture_failed` | `{reason: "insufficient_funds"\|"wrong_otp"\|"user_cancelled", source: str, link_id: str}` |
 | `marked_recovered` | `{recovered_amount: str, simulated_hours_to_recovery: float}` |
 | `routed_to_exception` (recovery) | `{reason: str}` |
 | `opened_review_ticket` | `{ticket_id: str, reason: str, priority: int, priority_band: str}` |
@@ -353,11 +377,14 @@ is the honest total; `ai_recovered + human_recovered` always equals it —
 | diagnosis | `app/agents/diagnosis.py`, `tests/test_diagnosis.py` | " |
 | recovery | `app/agents/recovery.py`, `tests/test_recovery.py` | " |
 | audit | `app/agents/audit.py`, `tests/test_audit.py` | " |
+| payment-engine | `app/agents/payment.py`, `tests/test_payment.py`, the capture branch of `app/webhooks/listener.py`, `app/api/payment_routes.py` (new) | `recovery.py`, `playground.py`, `store.py`, `main.py` wiring beyond mounting its own router |
+| simulation-engine | `app/agents/playground.py`, `tests/test_playground.py` | `payment.py`, `recovery.py`, `store.py`, route registration in `routes.py` beyond coordinated request/response field additions |
 | frontend | `frontend/src/**` | backend, docs |
 
 No builder edits `store.py`, `pipeline.py`, `main.py`, `app/agents/__init__.py`,
-`app/api/*`, or any `.md` doc. Doc changes are returned as a "docs delta" in the
-final report; the team-lead applies them.
+`app/api/*` (except the payment-engine builder's own new router file, mounted
+by team-lead), or any `.md` doc. Doc changes are returned as a "docs delta" in
+the final report; the team-lead applies them.
 
 `detection.py`, `diagnosis.py`, `recovery.py` each expose
 `run(session, *, settings=None) -> list[str]` (event_ids acted on) plus small
@@ -374,7 +401,253 @@ is down. Anthropic is never called in tests — `diagnosis.claude_classify` and
 
 ---
 
-## 10. Resolved contract questions (Phase B0)
+## 11. Payment-capture engine (`app/agents/payment.py`) — frozen signatures
+
+**The single integrity fix of this round**: `Event.status` becomes `RECOVERED`
+from a capture **only** via `apply_capture` below. Nothing else — not
+`recovery.py`'s dispatch logic, not a conversation outcome, not a coin flip —
+may ever write `status=RECOVERED`. `recovery.py._resolve_outcome` (team-lead
+owns this rewrite) calls into this module instead of its old
+`_stable_hash`-driven coin flip.
+
+```python
+# backend/app/agents/payment.py
+
+def razorpay_configured(settings: Settings) -> bool:
+    """True iff razorpay_key_id AND razorpay_key_secret are both set.
+    Necessary but NOT sufficient for the real API to be used -- see
+    _should_use_real_razorpay."""
+
+def _should_use_real_razorpay(settings: Settings) -> bool:
+    """True only when razorpay_configured(settings) AND the operator has
+    explicitly opted in via settings.use_real_razorpay_payment_links (default
+    False). Keys being present alone does NOT trigger the real path --
+    P9 addendum, added after a live account hit Razorpay's test-mode cap of
+    30 payment links per business: once hit, every real call fails with
+    429 RATE_LIMIT_EXCEEDED and silently falls back anyway, so
+    auto-attempting just because keys exist is a trap, not a feature."""
+
+def create_payment_link(
+    session: store.Session, event: Event, *, settings: Settings,
+) -> PaymentLinkResult:
+    """Real Razorpay test-mode Payment Link (POST /v1/payment_links) when
+    _should_use_real_razorpay(settings), else a deterministic fake link/token.
+    A Razorpay HTTP failure (timeout, 4xx/5xx, 5s timeout) NEVER raises --
+    falls through to the fake path, same posture as llm.py's provider
+    fallback. Does not write to the DB itself -- the caller (recovery.py)
+    stamps the returned fields via update_event."""
+    # PaymentLinkResult = {"link_id": str, "link_url": str,
+    #   "status": "created", "source": "razorpay" | "fake_gateway"}
+
+def resolve_fake_capture(
+    event: Event, link_id: str, *, settings: Settings, attempt: int = 1,
+) -> CaptureResult:
+    """PURE function -- no session/DB access, reads only in-memory Event
+    fields (amount, root_cause, customer_fake_balance, event_id). Reuses
+    recovery.SUCCESS_RATES + recovery._stable_hash (imported, never
+    duplicated) for the per-root-cause success roll; deterministic given the
+    same inputs -- hash the string f"{event.event_id}:{link_id}:{attempt}",
+    NOT just `event.event_id`/`link_id` alone (see P5: without the `attempt`
+    salt, a customer who fails once could never succeed on a bounded retry
+    with the same link -- a dead-end UX). `event.customer_fake_balance <
+    event.amount` forces reason="insufficient_funds" regardless of the
+    root-cause roll, on every attempt (a real balance shortfall doesn't
+    self-cure by retrying). This purity is a HARD interface contract:
+    playground.py calls this directly without a session and must never gain
+    one."""
+    # CaptureResult = {"captured": bool,
+    #   "reason": "captured" | "insufficient_funds" | "wrong_otp" | "user_cancelled",
+    #   "amount": Decimal}
+
+def apply_capture(
+    session: store.Session, event: Event, capture: CaptureResult, *, source: str,
+) -> None:
+    """THE ONLY place Event.status ever becomes RECOVERED from a capture.
+    On capture.captured=True: update_event(status=RECOVERED,
+    recovered_amount=capture["amount"], payment_link_status=CAPTURED,
+    payment_capture_source=source); log_action(action="payment_captured",
+    reasoning never empty); ptp.evaluate_ptp_status(session, event) so an
+    active PROMISED can flip to HONORED immediately.
+    On capture.captured=False: payment_link_status=FAILED,
+    payment_capture_source=source; log_action(action="payment_capture_failed",
+    reasoning=capture["reason"]). Event.status is left untouched on failure --
+    the caller (recovery.py or the /pay/:token router) decides
+    exception vs. bounded retry."""
+```
+
+`source` is always one of `"razorpay_webhook" | "fake_gateway"` (never
+`"none"` -- that value is reserved for `payment_capture_source`'s default,
+meaning "no capture attempted yet"). `apply_capture` always logs with
+`agent=Agent.RECOVERY` regardless of *who* calls it (the webhook listener, the
+`/pay/:token` router, or `recovery.py`'s synchronous fake-gateway path) --
+money-capture is conceptually a Recovery-agent action no matter which surface
+triggered it; the `payload["source"]` distinguishes the trigger.
+
+**Dual-log on the synchronous fake-gateway success path (batch pipeline
+only):** `apply_capture` writes `payment_captured` (the truthful "here is the
+capture that justifies RECOVERED" row). Immediately after, `recovery.py`
+additionally logs the pre-existing `marked_recovered` action with
+`simulated_hours_to_recovery` — kept **only** because `audit.compute_metrics`
+already reads that specific action/payload key for `avg_hours_to_recovery`.
+This is an echo for a metrics reader, not a second status write — `apply_capture`
+already set `status=RECOVERED` before `recovery.py`'s echo fires. The real
+Razorpay-webhook path does **not** get a `marked_recovered` echo (no
+`recovery.py` code runs when a webhook arrives asynchronously, out-of-band from
+any pipeline run) — `avg_hours_to_recovery` is documented as "fake-gateway-path
+only" in `documentation.md` as a result; noted under §13 as a new resolved
+question (P1).
+
+**Webhook wiring** (`app/webhooks/listener.py`, payment-engine builder edits):
+on `payment.captured` / `payment_link.paid` (already in `SUCCESS_EVENTS`,
+currently ignored), extract the entity via the **same event-name → entity-key
+convention `AT_RISK_EVENTS` already uses** (P6): a new
+`CAPTURE_EVENTS: dict[str, str] = {"payment.captured": "payment",
+"payment_link.paid": "payment_link"}` — i.e. `payment.captured`'s entity lives
+under `payload.payment.entity` (Razorpay copies the link's `notes` onto the
+resulting payment object too — this is *why* `notes` is set redundantly
+alongside `reference_id` at link-creation time, per §11's create-link
+paragraph), while `payment_link.paid`'s entity lives under
+`payload.payment_link.entity`, matching the existing `payment_link.expired`
+mapping's key. From that entity: extract `entity.notes.event_id` (fallback
+`entity.reference_id`); no matching event → `{"status": "ignored"}` HTTP 200;
+already `payment_link_status=CAPTURED` → ignored (idempotent against webhook
+redelivery); otherwise `apply_capture(..., source="razorpay_webhook")`.
+Existing signature verification stays first, unchanged.
+
+**`create_payment_link`'s `session` parameter** (P5-adjacent, not a retry
+question): kept in the frozen signature for call-site consistency with every
+other agent function in this codebase (all take `session` first) and as a
+placeholder for a future DB-backed use (e.g. a cross-run idempotency check).
+**It is fine for the current implementation to leave it structurally
+unused** — do not have `create_payment_link` call `log_action` itself; owning
+the audit row stays with the caller (`recovery.py` / the webhook / the
+`/pay/:token` router) so `reasoning` matches whichever context actually
+triggered link creation, rather than a generic message written blind to the
+caller.
+
+**`/pay/:token` router** (`app/api/payment_routes.py`, new, mounted by
+team-lead in `main.py`): **no new DB column for the attempt counter** — count
+existing `payment_capture_failed` audit rows for the event
+(`store.get_audit_trail(session, event_id)`, filtered by `action`) the same
+way `recovery.py._cooldown_adjust` already scans the trail for prior
+contacts; `attempt = failed_count + 1` feeds `resolve_fake_capture`'s new
+`attempt` param directly, so the audit log **is** the attempt-count state,
+no new column needed. On the 4th+ attempt (`failed_count >= 3`): **HTTP 409**
+(P7) — not 200-with-a-reason-field, not 429 — for consistency with this
+codebase's existing convention of using 409 for "guard violation given
+current object state" (see the ticket routes' 409s in `documentation.md`
+§5), not raw HTTP rate-limit semantics nobody else in this API uses. Body:
+`{"status": "error", "reason": "max_attempts_exceeded", "attempts_remaining": 0}`.
+`GET /api/pay/{token}` → display data (masked name,
+amount, `payment_link_status`); `POST /api/pay/{token}/attempt` →
+`resolve_fake_capture(event, token, settings=settings, attempt=failed_count+1)`
+then `apply_capture(..., source="fake_gateway")` on success (`apply_capture`'s
+own `payment_captured` log row is the only log write on success — the router
+does not additionally log); on failure, `apply_capture`'s own
+`payment_capture_failed` row **is** the failed-attempt record (does not touch
+`Event.status`) and the router returns
+`{captured: false, reason: str, attempts_remaining: int}`, bounded to 3
+attempts per token (P2: exact "token" identity — resolved as
+`payment_link_id` itself, since the fake gateway's `link_id` already doubles
+as the URL-safe token).
+
+---
+
+## 12. Playground `sim_state` — frozen shape
+
+Sibling object to the existing `history` list, round-tripped by the frontend
+on every `/start` / `/message` / `/advance` / `/pay` call. **Absent on any
+call → safe turn-1 defaults**, so every pre-existing test that doesn't pass it
+keeps working.
+
+```jsonc
+{
+  "mode": "custom" | "ai",                 // renamed from interactive|auto
+  "controlled_by": {"agent": "ai" | "human", "customer": "ai" | "human"},
+  "sim_day": 1,
+  "sim_hour": 9,
+  "exchanges_today": 0,
+  "attempts_so_far": 0,
+  "escalation_stage": 0,
+  "customer_last_responded_day": 1,
+  "customer_response_probability": 0.7,    // adjusted +-0.15/-0.1 per day, clamped [0.1, 0.95]
+  "outstanding_asks": [],                  // list[str], keyword-matched customer asks not yet addressed
+  "last_reply_text": null,                 // string | null -- anti-repetition for the deterministic fallback
+  "capture_attempts": 0                    // bounded ~3 attempts at click_payment_link, mirrors /pay/:token
+}
+```
+
+`playground.py` exposes (simulation-engine builder; signatures may be refined
+in the Phase B0 plan but the `sim_state` shape above and the
+`resolve_fake_capture`-only / never-`apply_capture` guarantee are frozen):
+
+```python
+def start_session(event, *, mode, channel=None, settings=None) -> dict: ...
+def send_message(event, history, message, channel, *, speaker=None, sim_state=None, settings=None) -> dict: ...
+def advance_conversation(event, history, channel, *, sim_state=None, settings=None) -> dict: ...
+def click_payment_link(event, history, channel="call", *, sim_state=None, settings=None) -> dict:
+    """Renamed from simulate_payment. A deprecated `simulate_payment` alias
+    may be kept (S5 -- see routes.py migration note below). Calls
+    payment.resolve_fake_capture(event, link_id, settings=settings,
+    attempt=sim_state["capture_attempts"] + 1) -- pure, imported, salted with
+    the sim_state attempt counter (P5's fix applies here too: without the
+    salt a rehearsal retry would replay the identical failure forever) --
+    and renders wrong_otp / insufficient_funds / user_cancelled / success --
+    weighted, never an unconditional instant success. `link_id` is a
+    playground-owned synthetic id (e.g. `sim_{event.event_id}`, S4 --
+    distinct from payment.py's own `fake_`/`plink_` prefixes; never persisted,
+    never collides since this module never writes anywhere). Increments
+    sim_state["capture_attempts"]. MUST NEVER call payment.apply_capture
+    (that writes to the DB and would break the sandboxing guarantee) --
+    test_playground.py asserts zero calls to it via a spy/mock."""
+```
+
+**Escalation object** (`outcome="escalated"` responses):
+
+```jsonc
+{
+  "reason": "customer_requested_human" | "out_of_scope" | "max_attempts_exceeded",
+  "outstanding_asks": [],
+  "last_customer_message": "...",
+  "root_cause": "insufficient_funds",
+  "attempts_so_far": 3,
+  "conversation_summary": "..."   // LLM one-liner, or a template built from
+                                   // outstanding_asks + turn count offline
+}
+```
+
+`CUSTOMER_RESPONSE_PROBABILITY = 0.7` (module constant, the *initial* value
+`sim_state.customer_response_probability` starts from); rolled deterministically
+per `(event_id, turn_index)` — reuse `recovery._stable_hash`-style hashing
+(import from `recovery.py`, never redefine) so it's reproducible in tests.
+`SAME_DAY_EXCHANGE_CAP = 20` — a circuit breaker only, never expected to fire
+on a real conversation; the clock advances on a natural pause (silence,
+explicit deferral, cadence), never a raw message-count cap.
+
+**`routes.py` migration (S5):** the simulation-engine builder keeps a
+deprecated `simulate_payment = click_payment_link` alias and has
+`start_session`/etc. accept the legacy `"interactive"|"auto"` mode strings
+(mapped internally to `"custom"|"ai"`) so `routes.py` needs **zero**
+coordinated changes in Phase B — team-lead migrates `routes.py` to the new
+names/shapes as part of Phase C's API-integration pass (not deferred
+indefinitely), then the alias can be dropped in the same change once nothing
+calls it.
+
+**Human takeover outcome declaration (S6):** when `controlled_by.agent ==
+"human"`, `send_message(..., speaker="agent", ...)` accepts an explicit
+optional `outcome` param, trusted as-supplied (never inferred from the
+human's freeform text) — inferring intent from arbitrary human phrasing is
+unreliable and would silently misclassify a human reviewer's own call.
+
+**`_DEFERRAL_PATTERNS` (S7):** the simulation-engine builder defines this
+keyword set freely (e.g. "kal", "tomorrow", "baad me", "call me later"),
+same latitude already granted to the `outstanding_asks` keyword-pattern map
+(S1) — not a frozen vocabulary, team-lead reviews for reasonable coverage at
+merge, not for an exact list match.
+
+---
+
+## 13. Resolved contract questions (Phase B0)
 
 | # | Question | Resolution |
 |---|---|---|
@@ -403,3 +676,19 @@ is down. Anthropic is never called in tests — `diagnosis.claude_classify` and
 | F3 | Single-event endpoint? | No — `GET /api/events/{id}/audit` returns `{event, trail}`; the queue uses the list. |
 | F4 | `avg_hours_to_recovery` unit? | Hours. |
 | F5 | Pagination on `GET /api/events`? | No — full list (batch is ~74 rows). |
+| P1 | `avg_hours_to_recovery` when a real Razorpay webhook (not the fake gateway) confirms capture? | Not included — no `marked_recovered` echo fires on the async webhook path (see §11 "dual-log" note). Documented as a fake-gateway-path-only metric until a future round adds a capture-timestamp-based calc for both paths. |
+| P2 | `/pay/:token` token identity? | The token **is** `payment_link_id` (fake gateway's own `fake_...` id) — no separate token table/column needed. |
+| P3 | Does `apply_capture`'s failed-capture path set `Event.status`? | No — leaves it untouched; `recovery.py` (batch) sets `EXCEPTION`, the `/pay/:token` router leaves it for a bounded retry (~3 attempts), by design (§2/§11). |
+| P4 | Razorpay-configured but the create-link HTTP call fails (timeout/4xx/5xx)? | Falls through to the fake-gateway path silently, same posture as `llm.py`'s provider fallback — `source="fake_gateway"` in that run even though keys were configured. |
+| P9 | Should `create_payment_link` attempt the real API automatically whenever both Razorpay keys are configured? | **No, changed post-launch.** A live demo account hit Razorpay's test-mode cap of 30 payment links per business; every subsequent real call failed with `429 RATE_LIMIT_EXCEEDED` and silently fell back to the fake gateway anyway, making the "hybrid" behavior invisible/confusing. Added `settings.use_real_razorpay_payment_links` (default `False`) and `_should_use_real_razorpay(settings) = razorpay_configured(settings) and use_real_razorpay_payment_links`. The fake gateway is now the default even with valid keys present; the real API is opt-in only. |
+| S1 | `outstanding_asks` matching — exact keyword list? | Left to the simulation-engine builder's plan (Phase B0) to propose; team-lead reviews for coverage of the plan's named examples (GST invoice, WhatsApp/email resend) before approval. |
+| S2 | Does `click_payment_link` ever need a `session` param for future real-DB writes? | No — frozen as pure/stateless per §12; any future "commit a rehearsal outcome to the real store" feature is an explicit, separate, human-gated action outside this module, not an implicit side effect here. |
+| S3 | `sim_state` versioning — what happens to an old frontend session dict missing new keys mid-migration? | Every new key has a documented default (§12); `playground.py` fills missing keys rather than requiring the full shape, so a partially-old `sim_state` degrades gracefully instead of erroring. |
+| P5 | `resolve_fake_capture` is deterministic per `(event_id, link_id)` — doesn't a `/pay/:token` retry with the same token replay the identical failure forever? | **Yes, this was a real dead-end bug in the frozen draft — fixed.** Added an `attempt: int = 1` param; the hash salts on `f"{event.event_id}:{link_id}:{attempt}"`, not just `event_id`/`link_id`. `customer_fake_balance < amount` still forces `insufficient_funds` on every attempt (a real shortfall doesn't self-cure). `/pay/:token`'s attempt number = count of prior `payment_capture_failed` audit rows + 1 (no new column); Playground's attempt number = `sim_state["capture_attempts"] + 1`. |
+| P6 | `_entity(event, "payment_link")` key for `payment_link.paid` — consistent with `payment_link.expired`'s existing shape? | Yes, confirmed — new `CAPTURE_EVENTS` map: `payment.captured` → entity key `"payment"`, `payment_link.paid` → entity key `"payment_link"` (matches `AT_RISK_EVENTS`' existing convention). Razorpay copies a link's `notes` onto the resulting payment object too, so `payment.captured`'s `entity.notes.event_id` is reliable even though it's a different entity than the link itself. |
+| P7 | `/pay/:token/attempt` on the 4th+ attempt — 200 with a reason field, or 429? | **409** — matches this codebase's existing convention (ticket routes) of 409 for "guard violation given current object state," not a raw HTTP rate-limit code introduced nowhere else in this API. |
+| P8 | `create_payment_link`'s `session` param — used anywhere in the body? | Currently structurally unused by design — kept for call-site consistency with every other agent function (`session` first) and as a placeholder for a future DB-backed use. `create_payment_link` must NOT call `log_action` itself; the caller owns that audit row so `reasoning` matches its actual triggering context. |
+| S4 | Playground's own synthetic `link_id` for `resolve_fake_capture` calls — collision risk with `payment.py`'s `fake_`/`plink_` prefixes? | No — use a distinct prefix (e.g. `sim_{event_id}`); never persisted anywhere (this module never writes to the DB), so there is no namespace to collide in. |
+| S5 | `routes.py` still calls `simulate_payment` with legacy `"interactive"\|"auto"` mode strings — coordinate a `routes.py` change now, or alias? | Alias approved: keep a deprecated `simulate_payment = click_payment_link` and accept legacy mode strings (mapped internally to `"custom"\|"ai"`) so Phase B needs zero `routes.py` coordination. Team-lead migrates `routes.py` to the new names in Phase C's API-integration pass, then drops the alias in the same change. |
+| S6 | When a human takes over as the Resolver, how is the conversation outcome declared? | An explicit optional `outcome` param on `send_message` when `speaker="agent"`, trusted as-supplied, never inferred from the human's freeform text — inferring intent from arbitrary human phrasing is unreliable. |
+| S7 | Is `_DEFERRAL_PATTERNS` (e.g. "kal", "tomorrow") part of the frozen contract? | No — same latitude as the `outstanding_asks` keyword map (S1): the builder defines it freely; team-lead reviews for reasonable coverage at merge, not an exact-list match. |

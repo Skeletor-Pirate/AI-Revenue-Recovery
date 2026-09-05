@@ -8,9 +8,10 @@
 | GET    | /api/tickets/{id}           | {ticket, event, trail}                |
 | POST   | /api/tickets/{id}/assign    | {status: "ok", ticket: TicketRead}    |
 | POST   | /api/tickets/{id}/resolve   | {status: "ok", ticket: TicketRead}    |
-| POST   | /api/events/{id}/playground/start   | {channel, ticket_ref, persona, opening_turn, outcome, history} |
-| POST   | /api/events/{id}/playground/message | {turn, outcome, reasoning, history}   |
-| POST   | /api/events/{id}/playground/advance | {customer_turn, agent_turn, outcome, reasoning, history} |
+| POST   | /api/events/{id}/playground/start   | {channel, ticket_ref, persona, opening_turn, outcome, history, sim_state} |
+| POST   | /api/events/{id}/playground/message | {turn, outcome, reasoning, history, sim_state, escalation?} |
+| POST   | /api/events/{id}/playground/advance | {customer_turn, agent_turn, outcome, reasoning, history, sim_state, escalation?} |
+| POST   | /api/events/{id}/playground/pay      | {turn, outcome, reasoning, history, sim_state, captured, reason} |
 | POST   | /api/pipeline/run           | {metrics: MetricsBlock, ran_at: str}  |
 | GET    | /api/metrics                | MetricsBlock                          |
 
@@ -67,8 +68,8 @@ class RaiseQuestionRequest(BaseModel):
 
 class PlaygroundStartRequest(BaseModel):
     mode: str = Field(
-        default="interactive",
-        description="'interactive' (you play the customer/business) or 'auto' (watch two AIs talk)",
+        default="custom",
+        description="'custom' (you play the customer/business) or 'ai' (watch two AIs talk)",
     )
     channel: str | None = Field(
         default=None,
@@ -78,18 +79,35 @@ class PlaygroundStartRequest(BaseModel):
 
 class PlaygroundMessageRequest(BaseModel):
     history: list[dict[str, str]] = Field(description="Transcript so far, [{speaker, text}, ...]")
-    message: str = Field(description="The tester's line, played as the customer/business")
+    message: str = Field(description="The line being sent, played as `speaker`")
     channel: str = Field(default="call", description="'call' or 'message'")
+    speaker: str | None = Field(
+        default=None,
+        description="'customer' (default) or 'agent' — 'agent' means a human has taken over the Resolver role",
+    )
+    sim_state: dict[str, Any] | None = Field(
+        default=None, description="Game-clock/escalation state round-tripped from the previous response",
+    )
+    outcome: str | None = Field(
+        default=None,
+        description="Only used when speaker='agent': the human reviewer's own declared outcome, trusted as-supplied",
+    )
 
 
 class PlaygroundAdvanceRequest(BaseModel):
     history: list[dict[str, str]] = Field(description="Transcript so far, [{speaker, text}, ...]")
     channel: str = Field(default="call", description="'call' or 'message'")
+    sim_state: dict[str, Any] | None = Field(
+        default=None, description="Game-clock/escalation state round-tripped from the previous response",
+    )
 
 
 class PlaygroundPayRequest(BaseModel):
     history: list[dict[str, str]] = Field(description="Transcript so far, [{speaker, text}, ...]")
     channel: str = Field(default="call", description="'call' or 'message'")
+    sim_state: dict[str, Any] | None = Field(
+        default=None, description="Game-clock/escalation state round-tripped from the previous response",
+    )
 
 
 @router.get("/events")
@@ -160,10 +178,16 @@ def event_voice_audio(event_id: str) -> dict[str, Any]:
 # the store. Nothing here should ever call insert_ticket / update_event /
 # log_action -- see playground.py's module docstring and plan.md §12.
 
+# "interactive"/"auto" are the pre-rewrite mode names; still accepted here
+# (and by playground.py itself) for backward compatibility -- the response
+# echoes back whichever of the four the caller actually sent.
+_VALID_PLAYGROUND_MODES = ("custom", "ai", "interactive", "auto")
+
+
 @router.post("/events/{event_id}/playground/start")
 def playground_start(event_id: str, body: PlaygroundStartRequest) -> dict[str, Any]:
     """Open a rehearsal session for this case. Writes nothing to the store."""
-    mode = body.mode if body.mode in ("interactive", "auto") else "interactive"
+    mode = body.mode if body.mode in _VALID_PLAYGROUND_MODES else "custom"
     with store.get_session() as session:
         event = store.get_event(session, event_id)
         if event is None:
@@ -175,39 +199,47 @@ def playground_start(event_id: str, body: PlaygroundStartRequest) -> dict[str, A
 
 @router.post("/events/{event_id}/playground/message")
 def playground_message(event_id: str, body: PlaygroundMessageRequest) -> dict[str, Any]:
-    """Interactive mode: the tester's line (as the customer/business), then
-    one Agent reply."""
+    """'custom' mode: the tester's line (as the customer, or as the agent when
+    `speaker='agent'` — a human taking over the Resolver role), then the
+    counterpart reply."""
+    speaker = body.speaker if body.speaker in ("customer", "agent") else None
     with store.get_session() as session:
         event = store.get_event(session, event_id)
         if event is None:
             raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
         return playground.send_message(
-            event, body.history, body.message, body.channel, settings=get_settings()
+            event, body.history, body.message, body.channel,
+            speaker=speaker, sim_state=body.sim_state, settings=get_settings(),
+            outcome=body.outcome,
         )
 
 
 @router.post("/events/{event_id}/playground/advance")
 def playground_advance(event_id: str, body: PlaygroundAdvanceRequest) -> dict[str, Any]:
-    """Auto mode: one Customer/Business turn, then one Agent reply — two
-    distinctly-prompted LLM calls."""
+    """'ai' mode: one Customer/Business turn, then one Agent reply — two
+    distinctly-prompted LLM calls (or a simulated non-response turn)."""
     with store.get_session() as session:
         event = store.get_event(session, event_id)
         if event is None:
             raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
         return playground.advance_conversation(
-            event, body.history, body.channel, settings=get_settings()
+            event, body.history, body.channel,
+            sim_state=body.sim_state, settings=get_settings(),
         )
 
 
 @router.post("/events/{event_id}/playground/pay")
 def playground_pay(event_id: str, body: PlaygroundPayRequest) -> dict[str, Any]:
-    """Simulate customer clicking the payment link and completing payment (Razorpay payment.captured)."""
+    """Simulate the customer clicking the rehearsal payment link. Calls the
+    pure `payment.resolve_fake_capture` (never `payment.apply_capture`) — a
+    weighted, believable outcome, never an unconditional instant success."""
     with store.get_session() as session:
         event = store.get_event(session, event_id)
         if event is None:
             raise HTTPException(status_code=404, detail=f"no such event: {event_id}")
-        return playground.simulate_payment(
-            event, body.history, body.channel, settings=get_settings()
+        return playground.click_payment_link(
+            event, body.history, body.channel,
+            sim_state=body.sim_state, settings=get_settings(),
         )
 
 

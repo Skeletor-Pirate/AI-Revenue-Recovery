@@ -8,8 +8,14 @@ action is written here via `log_action()` as it happens.
 Schema mirrors CLAUDE.md Section 5. Controlled vocabularies live here as
 `StrEnum`s: `EventType`, `EventStatus`, `Agent`, `RootCause` (the Diagnosis
 Agent's output vocabulary, one intervention each -- see
-backend/app/agents/AGENTS_CONTRACT.md), and `TicketStatus` / `TicketReason`
-(the human-review queue -- see app/agents/triage.py).
+backend/app/agents/AGENTS_CONTRACT.md), `TicketStatus` / `TicketReason`
+(the human-review queue -- see app/agents/triage.py), and `PaymentLinkStatus`
+(the unified payment-capture engine's lifecycle -- see app/agents/payment.py).
+`Event.status` becomes `RECOVERED` ONLY when `payment_link_status` reaches
+`CAPTURED`, via `payment.apply_capture` -- never a bare dispatch-logic or
+conversation-text decision. `PaymentLinkStatus` is orthogonal to `PTPStatus`:
+an event can independently have an active promise (`ptp_status=PROMISED`) and
+an awaiting link (`payment_link_status=AWAITING_CAPTURE`) at the same time.
 Stack: SQLModel (SQLAlchemy + Pydantic) on PostgreSQL 16, psycopg 3 driver.
 
 Two layers of models:
@@ -89,6 +95,24 @@ class PTPStatus(StrEnum):
     PROMISED = "promised"
     HONORED = "honored"
     BROKEN = "broken"
+
+
+class PaymentLinkStatus(StrEnum):
+    """Payment-link lifecycle for the unified capture engine (app/agents/payment.py).
+
+    Orthogonal to `PTPStatus` -- an event can independently be
+    `ptp_status=PROMISED` (a future promised date) *and*
+    `payment_link_status=AWAITING_CAPTURE` (a link already sent, no capture
+    yet). `EventStatus.RECOVERED` is set ONLY when this reaches `CAPTURED`,
+    and only via `payment.apply_capture` -- never from dispatch logic or
+    conversation text.
+    """
+    NONE = "none"
+    CREATED = "created"
+    AWAITING_CAPTURE = "awaiting_capture"
+    CAPTURED = "captured"
+    FAILED = "failed"
+    EXPIRED = "expired"
 
 
 class Agent(StrEnum):
@@ -205,6 +229,17 @@ class Event(SQLModel, table=True):
     retry_schedule: list[dict[str, Any]] | None = Field(
         default=None, sa_column=Column(JSONB, nullable=True)
     )
+    # --- unified payment-capture engine (app/agents/payment.py) -----------
+    payment_link_id: str | None = None            # `plink_...` (real) or `fake_...` (fake gateway)
+    payment_link_url: str | None = None            # shown to the customer / used by /pay/:token
+    payment_link_status: str = Field(default=PaymentLinkStatus.NONE, index=True)
+    payment_link_sent_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    payment_capture_source: str | None = None      # "razorpay_webhook" | "fake_gateway" | "none"
+    customer_fake_balance: Decimal | None = Field(
+        default=None, max_digits=14, decimal_places=2
+    )  # synthetic bank balance the fake gateway checks for insufficient-funds
 
 
 class AuditLog(SQLModel, table=True):
@@ -331,6 +366,12 @@ class EventCreate(SQLModel):
     promised_date: datetime | None = None
     ptp_status: PTPStatus = PTPStatus.NONE
     retry_schedule: list[dict[str, Any]] | None = None
+    payment_link_id: str | None = None
+    payment_link_url: str | None = None
+    payment_link_status: PaymentLinkStatus = PaymentLinkStatus.NONE
+    payment_link_sent_at: datetime | None = None
+    payment_capture_source: str | None = None
+    customer_fake_balance: Decimal | None = Field(default=None, ge=0, max_digits=14)
 
     @field_validator("currency")
     @classmethod
@@ -341,6 +382,11 @@ class EventCreate(SQLModel):
     @classmethod
     def _round_money(cls, v: Decimal) -> Decimal:
         return v.quantize(MONEY)
+
+    @field_validator("customer_fake_balance")
+    @classmethod
+    def _round_balance(cls, v: Decimal | None) -> Decimal | None:
+        return None if v is None else v.quantize(MONEY)
 
 
 class EventUpdate(SQLModel):
@@ -366,8 +412,16 @@ class EventUpdate(SQLModel):
     promised_date: datetime | None = None
     ptp_status: PTPStatus | None = None
     retry_schedule: list[dict[str, Any]] | None = None
+    payment_link_id: str | None = None
+    payment_link_url: str | None = None
+    payment_link_status: PaymentLinkStatus | None = None
+    payment_link_sent_at: datetime | None = None
+    payment_capture_source: str | None = None
+    customer_fake_balance: Decimal | None = Field(default=None, ge=0, max_digits=14)
 
-    @field_validator("amount", "recovered_amount", "human_recovered_amount")
+    @field_validator(
+        "amount", "recovered_amount", "human_recovered_amount", "customer_fake_balance"
+    )
     @classmethod
     def _round_money(cls, v: Decimal | None) -> Decimal | None:
         return None if v is None else v.quantize(MONEY)
@@ -398,6 +452,12 @@ class EventRead(SQLModel):
     promised_date: datetime | None = None
     ptp_status: str = PTPStatus.NONE
     retry_schedule: list[dict[str, Any]] | None = None
+    payment_link_id: str | None = None
+    payment_link_url: str | None = None
+    payment_link_status: str = PaymentLinkStatus.NONE
+    payment_link_sent_at: datetime | None = None
+    payment_capture_source: str | None = None
+    customer_fake_balance: Decimal | None = None
 
 
 class AuditCreate(SQLModel):

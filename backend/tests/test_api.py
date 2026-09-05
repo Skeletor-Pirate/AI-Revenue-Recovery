@@ -306,14 +306,27 @@ def test_playground_interactive_message_reaches_an_outcome(client):
     assert body["outcome"] in ("ongoing", "ptp_promised", "resolved", "escalated", "halted")
     assert body["history"][-1] == _speaker_text(body["turn"])
 
-    # Test payment simulation route
+    # Payment-link click route: honestly probabilistic since the
+    # payment-capture integrity fix (2026-09-05) -- click_payment_link calls
+    # the same pure `payment.resolve_fake_capture` the real pipeline uses, so
+    # this is no longer an unconditional instant "resolved" (AGENTS_CONTRACT.md
+    # §12). Assert the full contract shape for whichever branch this
+    # particular seeded event happens to hash to, rather than assuming success.
     pay_r = client.post(
         f"/api/events/{eid}/playground/pay",
         json={"history": body["history"], "channel": started["channel"]},
     )
     assert pay_r.status_code == 200
-    assert pay_r.json()["outcome"] == "resolved"
-    assert "pay_sim_" in pay_r.json()["payment_id"]
+    pay_body = pay_r.json()
+    assert isinstance(pay_body["captured"], bool)
+    assert pay_body["reason"] in ("captured", "insufficient_funds", "wrong_otp", "user_cancelled")
+    if pay_body["captured"]:
+        assert pay_body["outcome"] == "resolved"
+        assert pay_body["payment_id"] and "pay_sim_" in pay_body["payment_id"]
+    else:
+        assert pay_body["outcome"] in ("ongoing", "escalated")
+        assert pay_body["payment_id"] is None
+    assert "sim_state" in pay_body
 
     assert client.post("/api/events/nope/playground/message",
                        json={"history": [], "message": "hi"}).status_code == 404
@@ -356,4 +369,17 @@ def test_playground_never_touches_the_real_store_or_metrics(client):
                json={"history": history, "message": "haan theek hai", "channel": started["channel"]})
 
     assert _db_snapshot() == before_db
-    assert client.get("/api/metrics").json() == before_metrics
+
+    # `tickets.oldest_open_hours` is `(now - oldest_ticket.created_at)` --
+    # it genuinely advances with real wall-clock time regardless of any
+    # mutation (a real LLM/Sarvam call in this test can take long enough for
+    # it to visibly differ at whatever rounding precision the API uses).
+    # That's wall-clock drift in a time-based metric, not a store mutation --
+    # exclude it from the strict equality check; everything else (including
+    # every money figure, status count, and exception-list entry) must still
+    # be byte-identical, which is the actual sandboxing guarantee this test
+    # exists to prove.
+    after_metrics = client.get("/api/metrics").json()
+    before_metrics["tickets"].pop("oldest_open_hours", None)
+    after_metrics["tickets"].pop("oldest_open_hours", None)
+    assert after_metrics == before_metrics

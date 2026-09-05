@@ -50,6 +50,22 @@ class Settings(BaseSettings):
     razorpay_key_secret: str | None = None
     razorpay_webhook_secret: str | None = None
 
+    # --- unified payment-capture engine (app/agents/payment.py) -----------
+    # The fake gateway is the DEFAULT even when Razorpay keys are configured.
+    # Razorpay's test mode caps a business account at 30 payment links total
+    # -- once hit, every real call fails (429 RATE_LIMIT_EXCEEDED) and
+    # create_payment_link silently falls back anyway, so attempting the real
+    # API automatically just because keys exist is a trap, not a feature.
+    # Set this to true only when deliberately demoing the real integration.
+    use_real_razorpay_payment_links: bool = False
+    # Base URL the fake gateway builds `{base}/pay/{token}` links from -- the
+    # frontend's standalone PayCheckout page, not the ops dashboard.
+    payment_engine_base_url: str = "http://localhost:5173"
+    # Global default success rate for the deterministic fake gateway when no
+    # Razorpay keys are configured. Root-cause-specific rates still come from
+    # recovery.py's existing SUCCESS_RATES; this is a fallback/global knob.
+    fake_gateway_success_rate: float = 0.65
+
     # --- Sarvam AI text-to-speech (app/agents/voice_tts.py). Optional: with no
     #     key the /voice/audio endpoint returns {available: false} and the
     #     dashboard falls back to the browser SpeechSynthesis voice. ---

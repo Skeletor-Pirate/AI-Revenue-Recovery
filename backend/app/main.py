@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import router as api_router
+from app.api.payment_routes import router as payment_router
 from app.config import get_settings
 from app.db import store
 from app.webhooks import router as webhooks_router
@@ -52,3 +53,4 @@ def health() -> dict[str, str]:
 
 app.include_router(api_router)
 app.include_router(webhooks_router)
+app.include_router(payment_router)

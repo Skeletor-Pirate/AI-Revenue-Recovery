@@ -98,7 +98,7 @@ def test_start_session_works_without_an_llm_key():
     assert session["history"] == [session["opening_turn"]]
 
 
-def test_interactive_fallback_reaches_ptp():
+def test_interactive_fallback_reaches_ptp(monkeypatch):
     event = _event()
     session = pg.start_session(event, mode="interactive", settings=_NO_LLM)
     result = pg.send_message(
@@ -110,7 +110,13 @@ def test_interactive_fallback_reaches_ptp():
     assert result["history"][-1] == result["turn"]
     assert result["history"][-2] == {"speaker": "customer", "text": "Haan theek hai, main abhi pay karta hoon"}
 
-    # Now simulate customer clicking link and completing payment (payment.captured)
+    # Now simulate customer clicking link and completing payment -- routed
+    # through the (monkeypatched, pure) payment engine, never an
+    # unconditional instant success.
+    def _fake_resolve(evt, link_id, *, settings, attempt=1):
+        return {"captured": True, "reason": "captured", "amount": evt.amount}
+
+    monkeypatch.setattr(pg.payment, "resolve_fake_capture", _fake_resolve)
     paid = pg.simulate_payment(event, result["history"], "call", settings=_NO_LLM)
     assert paid["outcome"] == "resolved"
     assert "pay_sim_" in paid["payment_id"]
@@ -152,11 +158,14 @@ def test_auto_mode_fallback_produces_both_turns():
 
 def test_auto_mode_fallback_reaches_a_terminal_outcome():
     event = _event()
-    history = pg.start_session(event, mode="auto", settings=_NO_LLM)["history"]
+    session = pg.start_session(event, mode="auto", settings=_NO_LLM)
+    history = session["history"]
+    st = session["sim_state"]
     outcome = "ongoing"
-    for _ in range(6):
-        result = pg.advance_conversation(event, history, "call", settings=_NO_LLM)
+    for _ in range(20):
+        result = pg.advance_conversation(event, history, "call", sim_state=st, settings=_NO_LLM)
         history = result["history"]
+        st = result["sim_state"]
         outcome = result["outcome"]
         if outcome != "ongoing":
             break
@@ -320,3 +329,242 @@ def test_auto_session_never_writes_to_the_store(session):
             break
 
     assert _snapshot(session) == before
+
+
+# --- modes / legacy aliases / controlled_by --------------------------------
+
+def test_legacy_mode_strings_map_to_new_names():
+    session = pg.start_session(_event(), mode="interactive", settings=_NO_LLM)
+    assert session["mode"] == "interactive"  # raw value preserved at the top level
+    assert session["sim_state"]["mode"] == "custom"
+
+    session2 = pg.start_session(_event(), mode="auto", settings=_NO_LLM)
+    assert session2["sim_state"]["mode"] == "ai"
+
+
+def test_default_controlled_by_per_mode():
+    custom = pg._default_sim_state("custom")
+    assert custom["controlled_by"] == {"agent": "ai", "customer": "human"}
+    ai = pg._default_sim_state("ai")
+    assert ai["controlled_by"] == {"agent": "ai", "customer": "ai"}
+
+
+def test_sim_state_absent_degrades_to_turn1_defaults():
+    """A caller that doesn't pass sim_state (every pre-existing test) still
+    works at turn-1 semantics."""
+    filled = pg._fill_sim_state(None, mode="custom")
+    assert filled["sim_day"] == 1
+    assert filled["attempts_so_far"] == 0
+    assert filled["outstanding_asks"] == []
+
+
+def test_sim_state_partial_old_shape_fills_missing_keys():
+    """S3: an old frontend session dict missing new keys degrades gracefully."""
+    partial = {"mode": "custom", "attempts_so_far": 2}
+    filled = pg._fill_sim_state(partial, mode="custom")
+    assert filled["attempts_so_far"] == 2
+    assert filled["sim_day"] == 1
+    assert filled["capture_attempts"] == 0
+    assert "outstanding_asks" in filled
+
+
+def test_human_takeover_of_agent_role_trusts_explicit_outcome():
+    event = _event()
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    result = pg.send_message(
+        event, session["history"], "Main manually confirm karta hoon, sab theek hai.", "call",
+        speaker="agent", outcome="resolved", settings=_NO_LLM,
+    )
+    assert result["outcome"] == "resolved"
+    assert result["turn"]["text"] == "Main manually confirm karta hoon, sab theek hai."
+    assert result["history"][-1]["speaker"] == "agent"
+
+
+# --- response-probability determinism --------------------------------------
+
+def test_customer_response_roll_is_deterministic_per_event_and_turn():
+    a1 = pg._roll_customer_response("evt_det1", 3, 0.7)
+    a2 = pg._roll_customer_response("evt_det1", 3, 0.7)
+    assert a1 == a2  # same inputs -> same roll, every time
+
+    # different turn indices / event ids are free to differ, but must still
+    # be individually reproducible.
+    b1 = pg._roll_customer_response("evt_det1", 7, 0.7)
+    b2 = pg._roll_customer_response("evt_det1", 7, 0.7)
+    assert b1 == b2
+
+
+# --- multi-day game clock ---------------------------------------------------
+
+def test_in_scope_multi_question_exchange_does_not_advance_the_clock():
+    event = _event()
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    st = session["sim_state"]
+    day_before = st["sim_day"]
+    msg = "GST invoice chahiye, aur ye bhi bataiye ki fail kyu hua tha?"
+    result = pg.send_message(event, session["history"], msg, session["channel"], sim_state=st, settings=_NO_LLM)
+    assert result["sim_state"]["sim_day"] == day_before  # no natural pause -> no day advance
+
+
+def test_explicit_deferral_advances_the_clock():
+    event = _event()
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    st = session["sim_state"]
+    day_before = st["sim_day"]
+    result = pg.send_message(
+        event, session["history"], "Kal baat karte hain, abhi busy hoon.", session["channel"],
+        sim_state=st, settings=_NO_LLM,
+    )
+    assert result["sim_state"]["sim_day"] == day_before + 1
+    assert result["sim_state"]["exchanges_today"] == 0
+
+
+def test_no_response_turn_is_a_distinct_shape_and_advances_the_clock(monkeypatch):
+    event = _event()
+    session = pg.start_session(event, mode="ai", settings=_NO_LLM)
+    st = session["sim_state"]
+    monkeypatch.setattr(pg, "_roll_customer_response", lambda *a, **k: False)
+    day_before = st["sim_day"]
+    result = pg.advance_conversation(event, session["history"], session["channel"], sim_state=st, settings=_NO_LLM)
+    assert result["no_response"] is True
+    assert "customer_turn" not in result or result["customer_turn"] is None
+    # a distinct outcome shape, not a chat bubble -- no agent/customer turn
+    # was added, only an internal "system" marker so a repeated silence roll
+    # doesn't hash to the same seed forever.
+    assert all(h["speaker"] != "customer" for h in result["history"][len(session["history"]):])
+    assert all(h["speaker"] != "agent" for h in result["history"][len(session["history"]):])
+    assert result["sim_state"]["sim_day"] == day_before + 1
+
+
+# --- escalation: two distinct structured triggers ---------------------------
+
+def test_human_demand_escalates_immediately_regardless_of_attempts():
+    event = _event()
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    result = pg.send_message(
+        event, session["history"], "Mujhe kisi real insaan se baat karni hai, human agent chahiye.",
+        session["channel"], settings=_NO_LLM,
+    )
+    assert result["outcome"] == "escalated"
+    assert "escalation" in result
+    esc = result["escalation"]
+    assert esc["reason"] == "customer_requested_human"
+    assert esc["attempts_so_far"] == 1  # immediate -- did not need to exhaust attempts
+    assert "root_cause" in esc and "conversation_summary" in esc
+    assert esc["last_customer_message"].startswith("Mujhe")
+
+
+def test_exhausted_attempts_escalates_with_max_attempts_reason():
+    event = _event()
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    history = session["history"]
+    st = session["sim_state"]
+    result = None
+    for _ in range(pg.MAX_RETRY_ATTEMPTS + 1):
+        result = pg.send_message(event, history, "hmm not sure", session["channel"], sim_state=st, settings=_NO_LLM)
+        history = result["history"]
+        st = result["sim_state"]
+        if result["outcome"] == "escalated":
+            break
+    assert result["outcome"] == "escalated"
+    assert result["escalation"]["reason"] in ("max_attempts_exceeded", "out_of_scope")
+    assert result["escalation"]["attempts_so_far"] >= pg.MAX_RETRY_ATTEMPTS
+
+
+# --- outstanding_asks --------------------------------------------------
+
+def test_outstanding_asks_populate_and_clear():
+    st = pg._default_sim_state("custom")
+    pg._track_asks(st, "Please GST invoice bhi bhejo, aur WhatsApp pe bhi bhejna.")
+    assert "wants a GST invoice" in st["outstanding_asks"]
+    assert "wants the link resent via WhatsApp" in st["outstanding_asks"]
+
+    pg._clear_addressed_asks(st, "Theek hai, GST invoice email par bhej diya hai.")
+    assert "wants a GST invoice" not in st["outstanding_asks"]
+    assert "wants the link resent via WhatsApp" in st["outstanding_asks"]  # not yet addressed
+
+
+# --- anti-repetition (deterministic fallback) -------------------------------
+
+def test_deterministic_fallback_never_repeats_last_reply_verbatim():
+    event = _event()
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    history = session["history"]
+    st = session["sim_state"]
+    seen_replies = []
+    for _ in range(4):
+        result = pg.send_message(event, history, "hmm accha", session["channel"], sim_state=st, settings=_NO_LLM)
+        history = result["history"]
+        st = result["sim_state"]
+        seen_replies.append(result["turn"]["text"])
+        if result["outcome"] != "ongoing":
+            break
+    # no two consecutive agent replies were byte-identical
+    assert all(seen_replies[i] != seen_replies[i + 1] for i in range(len(seen_replies) - 1))
+
+
+# --- click_payment_link / sandboxing of the payment engine ------------------
+
+def test_click_payment_link_calls_resolve_fake_capture_never_apply_capture(monkeypatch):
+    event = _event()
+    calls = {"resolve": 0, "apply": 0}
+
+    def _fake_resolve(evt, link_id, *, settings, attempt=1):
+        calls["resolve"] += 1
+        assert link_id.startswith("sim_")
+        assert attempt == 1
+        return {"captured": False, "reason": "wrong_otp", "amount": evt.amount}
+
+    def _fake_apply(*a, **k):
+        calls["apply"] += 1
+        raise AssertionError("apply_capture must never be called from playground.py")
+
+    monkeypatch.setattr(pg.payment, "resolve_fake_capture", _fake_resolve)
+    monkeypatch.setattr(pg.payment, "apply_capture", _fake_apply)
+
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    result = pg.click_payment_link(event, session["history"], "call", settings=_NO_LLM)
+
+    assert calls["resolve"] == 1
+    assert calls["apply"] == 0
+    assert result["captured"] is False
+    assert result["outcome"] == "ongoing"
+    assert result["sim_state"]["capture_attempts"] == 1
+
+
+def test_click_payment_link_increments_capture_attempts_and_escalates_after_three(monkeypatch):
+    event = _event()
+
+    def _always_fails(evt, link_id, *, settings, attempt=1):
+        return {"captured": False, "reason": "insufficient_funds", "amount": evt.amount}
+
+    monkeypatch.setattr(pg.payment, "resolve_fake_capture", _always_fails)
+
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    st = session["sim_state"]
+    history = session["history"]
+    result = None
+    for _ in range(3):
+        result = pg.click_payment_link(event, history, "call", sim_state=st, settings=_NO_LLM)
+        history = result["history"]
+        st = result["sim_state"]
+
+    assert st["capture_attempts"] == 3
+    assert result["outcome"] == "escalated"
+    assert result["escalation"]["reason"] == "max_attempts_exceeded"
+
+
+def test_click_payment_link_success_never_unconditional(monkeypatch):
+    """A capture attempt that fails must be rendered honestly, not silently
+    turned into an instant 'resolved'."""
+    event = _event()
+
+    def _fake_resolve(evt, link_id, *, settings, attempt=1):
+        return {"captured": False, "reason": "user_cancelled", "amount": evt.amount}
+
+    monkeypatch.setattr(pg.payment, "resolve_fake_capture", _fake_resolve)
+    session = pg.start_session(event, mode="custom", settings=_NO_LLM)
+    result = pg.click_payment_link(event, session["history"], "call", settings=_NO_LLM)
+    assert result["outcome"] != "resolved"
+    assert result["captured"] is False
+    assert result["payment_id"] is None

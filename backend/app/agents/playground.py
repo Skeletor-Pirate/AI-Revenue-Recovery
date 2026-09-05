@@ -12,42 +12,86 @@ independently-prompted chat roles carry on a real turn-by-turn conversation:
   conversation is ``resolved`` / ``escalated`` / ``halted``.
 * the **Customer / Business** — a synthetic counterparty persona (an
   individual for B2C cases, an accounts-payable contact for B2B invoices),
-  either played by a human tester (**interactive** mode) or by a second LLM
-  call with its own system prompt (**auto** mode — "watch two AIs talk").
+  either played by a human tester or by a second LLM call with its own
+  system prompt.
+
+Modes: ``"custom"`` (tester always plays the customer) and ``"ai"`` (two AIs
+converse) — legacy ``"interactive"``/``"auto"`` strings are accepted and
+mapped internally (see AGENTS_CONTRACT.md §12/§13 S5). Either role can be
+taken over by a human tester via ``sim_state.controlled_by``.
 
 **This module is stateless and read-only against the store.** Every function
-takes an already-fetched ``Event`` and a ``history`` list the caller passes
-back in; nothing here calls ``insert_ticket``, ``update_event``, or
-``log_action``. That is what makes the session a safe rehearsal: a judge
-play-testing "yes I'll pay" can never move the real ``events``/``tickets``
-tables or the batch's ``MetricsBlock`` — see AGENTS_CONTRACT.md and plan.md
-§12. The frontend holds the transcript in memory and resends it each call.
+takes an already-fetched ``Event`` and a ``history`` list (plus an optional
+``sim_state`` game-clock/escalation dict) the caller passes back in; nothing
+here calls ``insert_ticket``, ``update_event``, or ``log_action``. That is
+what makes the session a safe rehearsal: a judge play-testing "yes I'll pay"
+can never move the real ``events``/``tickets`` tables or the batch's
+``MetricsBlock`` — see AGENTS_CONTRACT.md §12 and plan.md §12.
 
 Public API:
     pick_channel(event) -> "call" | "message"
     build_persona(event) -> dict                    # display context
-    start_session(event, *, mode, settings) -> dict
-    send_message(event, history, message, channel, *, settings) -> dict   # interactive
-    advance_conversation(event, history, channel, *, settings) -> dict    # auto
+    start_session(event, *, mode, channel=None, settings=None) -> dict
+    send_message(event, history, message, channel, *, speaker=None,
+                 sim_state=None, settings=None, outcome=None) -> dict
+    advance_conversation(event, history, channel, *, sim_state=None,
+                         settings=None) -> dict
+    click_payment_link(event, history, channel="call", *, sim_state=None,
+                       settings=None) -> dict
+    simulate_payment = click_payment_link   # deprecated alias, S5
 """
 
 from __future__ import annotations
 
 import json
 import random
-import re
+import types
 from typing import Any, Literal
 
 from app import llm
 from app.agents import voice_tts
+from app.agents.recovery import (
+    HUMAN_APPROVAL_THRESHOLD_INR,
+    MAX_ESCALATION_STAGE,
+    MAX_RETRY_ATTEMPTS,
+)
+from app.agents.recovery import _stable_hash as _recovery_stable_hash
 from app.config import Settings, get_settings
 from app.db.store import Event, RootCause
 
-Mode = Literal["interactive", "auto"]
+# payment.py is being built in parallel (payment-engine builder). Import
+# defensively so this module still loads (and every existing test still
+# collects) if it isn't merged yet -- tests monkeypatch `pg.payment.*`
+# regardless of which path is taken here.
+try:
+    from app.agents import payment  # type: ignore
+except Exception:  # pragma: no cover - only hit before payment.py lands
+    payment = types.ModuleType("app.agents.payment")
+
+    def _unavailable_resolve_fake_capture(event, link_id, *, settings, attempt=1):
+        raise RuntimeError("app.agents.payment.resolve_fake_capture is not available yet")
+
+    def _unavailable_apply_capture(*args, **kwargs):
+        raise RuntimeError("app.agents.payment.apply_capture is not available yet")
+
+    payment.resolve_fake_capture = _unavailable_resolve_fake_capture  # type: ignore[attr-defined]
+    payment.apply_capture = _unavailable_apply_capture  # type: ignore[attr-defined]
+
+Mode = Literal["interactive", "auto", "custom", "ai"]
 Channel = Literal["call", "message"]
 Outcome = Literal["ongoing", "ptp_promised", "resolved", "escalated", "halted"]
+Speaker = Literal["agent", "customer"]
 
 _VALID_OUTCOMES = ("ongoing", "ptp_promised", "resolved", "escalated", "halted")
+
+# --- mode aliasing (S5) ------------------------------------------------
+
+_MODE_ALIASES = {"interactive": "custom", "auto": "ai"}
+
+
+def _normalize_mode(mode: str) -> str:
+    return _MODE_ALIASES.get(mode, mode)
+
 
 # root_cause -> channel. Payment-failure causes suit a phone call (higher
 # urgency, needs a real-time yes/no); nudges and B2B chasers suit a message.
@@ -113,21 +157,240 @@ def build_persona(event: Event) -> dict[str, Any]:
     }
 
 
+# --- sim_state (AGENTS_CONTRACT.md §12, frozen shape) -----------------------
+
+CUSTOMER_RESPONSE_PROBABILITY = 0.7
+SAME_DAY_EXCHANGE_CAP = 20  # circuit breaker only -- never expected to fire
+
+
+def _default_controlled_by(mode: str) -> dict[str, str]:
+    if mode == "custom":
+        return {"agent": "ai", "customer": "human"}
+    return {"agent": "ai", "customer": "ai"}
+
+
+def _default_sim_state(mode: str) -> dict[str, Any]:
+    norm = _normalize_mode(mode)
+    return {
+        "mode": norm,
+        "controlled_by": _default_controlled_by(norm),
+        "sim_day": 1,
+        "sim_hour": 9,
+        "exchanges_today": 0,
+        "attempts_so_far": 0,
+        "escalation_stage": 0,
+        "customer_last_responded_day": 1,
+        "customer_response_probability": CUSTOMER_RESPONSE_PROBABILITY,
+        "outstanding_asks": [],
+        "last_reply_text": None,
+        "capture_attempts": 0,
+    }
+
+
+def _fill_sim_state(sim_state: dict[str, Any] | None, mode: str) -> dict[str, Any]:
+    """Absent/partial `sim_state` (including a partially-old shape, S3) always
+    degrades to safe turn-1 defaults for whatever keys are missing."""
+    defaults = _default_sim_state(mode)
+    if not sim_state:
+        return defaults
+    merged = {**defaults, **sim_state}
+    merged["controlled_by"] = {
+        **defaults["controlled_by"],
+        **(sim_state.get("controlled_by") or {}),
+    }
+    merged["outstanding_asks"] = list(sim_state.get("outstanding_asks") or [])
+    return merged
+
+
+def _advance_day(sim_state: dict[str, Any]) -> None:
+    sim_state["sim_day"] += 1
+    sim_state["sim_hour"] = 9
+    sim_state["exchanges_today"] = 0
+
+
+def _advance_day_for_silence(sim_state: dict[str, Any]) -> None:
+    sim_state["customer_response_probability"] = max(
+        0.1, round(sim_state["customer_response_probability"] - 0.1, 4)
+    )
+    _advance_day(sim_state)
+
+
+def _bump_clock(sim_state: dict[str, Any], *, natural_pause: bool) -> None:
+    """Advance the clock on a natural pause (explicit deferral, or the
+    circuit breaker); otherwise just move the cadence forward within the same
+    day. Never a raw message-count cap."""
+    sim_state["exchanges_today"] += 1
+    if natural_pause or sim_state["exchanges_today"] >= SAME_DAY_EXCHANGE_CAP:
+        _advance_day(sim_state)
+    else:
+        sim_state["sim_hour"] = min(23, sim_state["sim_hour"] + 1)
+
+
+def _register_response(sim_state: dict[str, Any]) -> None:
+    """Recent same-day response raises the next response probability."""
+    sim_state["customer_last_responded_day"] = sim_state["sim_day"]
+    sim_state["customer_response_probability"] = min(
+        0.95, round(sim_state["customer_response_probability"] + 0.15, 4)
+    )
+
+
+def _roll_customer_response(event_id: str, turn_index: int, probability: float) -> bool:
+    """Deterministic per (event_id, turn_index) roll -- reproducible in
+    tests. Reuses recovery._stable_hash (imported, never redefined)."""
+    roll = _recovery_stable_hash(f"{event_id}:resp:{turn_index}") % 100
+    return roll < round(probability * 100)
+
+
+# --- outstanding-asks keyword-pattern map (S1, builder's own latitude) -----
+
+_ASK_PATTERNS: dict[str, tuple[str, ...]] = {
+    "wants a GST invoice": ("gst", "tax invoice", "invoice chahiye", "bill chahiye", "invoice bhejo"),
+    "wants the link resent via WhatsApp": ("whatsapp",),
+    "wants the link resent via email": (
+        "email pe", "email par", "email bhej", "mail kar", "send it to my email", "mail bhej",
+    ),
+    "wants a callback": ("call back", "callback", "phone karo", "call me later"),
+    "wants more detail": (
+        "more detail", "explain more", "samjhao thoda", "elaborate", "detail chahiye", "samjhaiye",
+    ),
+}
+
+
+def _track_asks(sim_state: dict[str, Any], message: str) -> None:
+    text = message.lower()
+    for label, keywords in _ASK_PATTERNS.items():
+        if label in sim_state["outstanding_asks"]:
+            continue
+        if any(k in text for k in keywords):
+            sim_state["outstanding_asks"].append(label)
+
+
+def _clear_addressed_asks(sim_state: dict[str, Any], agent_reply_text: str) -> None:
+    text = agent_reply_text.lower()
+    remaining = []
+    for label in sim_state["outstanding_asks"]:
+        keywords = _ASK_PATTERNS.get(label, ())
+        if any(k in text for k in keywords):
+            continue  # addressed this turn
+        remaining.append(label)
+    sim_state["outstanding_asks"] = remaining
+
+
+# --- explicit human-request / deferral detection ----------------------------
+
+_HUMAN_REQUEST_PATTERNS = (
+    "human se baat", "real person", "real insaan", "talk to a human", "talk to a person",
+    "manager se baat", "supervisor", "connect me to a human", "escalate to human",
+    "insaan se baat", "human agent chahiye", "koi insaan", "baat karao kisi insaan se",
+)
+
+_DEFERRAL_PATTERNS = (
+    "kal", "tomorrow", "baad me", "baad mein", "call me later", "next week",
+    "agle hafte", "abhi busy", "thodi der baad", "later today", "i'll check tomorrow",
+    "check kar ke batata hoon",
+)
+
+
+def _matches_any(text: str, patterns: tuple[str, ...]) -> bool:
+    t = text.lower()
+    return any(p in t for p in patterns)
+
+
+# --- structured escalation handoff ------------------------------------------
+
+
+def _summarize_conversation(
+    history: list[dict[str, str]], sim_state: dict[str, Any], settings: Settings
+) -> str:
+    asks = sim_state.get("outstanding_asks") or []
+    if llm.available(settings):
+        try:
+            transcript = "\n".join(f"{h['speaker']}: {h['text']}" for h in history[-10:])
+            summary = llm.chat(
+                "Summarize this customer-recovery rehearsal conversation in one short, "
+                "plain-English sentence for a human reviewer who has not read the transcript.",
+                transcript,
+                settings=settings,
+                max_tokens=80,
+            ).strip()
+            if summary:
+                return summary
+        except Exception:
+            pass
+    asks_note = f"; outstanding: {', '.join(asks)}" if asks else ""
+    return f"{len(history)}-turn rehearsal conversation, no resolution reached{asks_note}."
+
+
+def _build_escalation(
+    event: Event,
+    sim_state: dict[str, Any],
+    history: list[dict[str, str]],
+    reason: str,
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    s = settings or get_settings()
+    last_customer_message = next(
+        (h["text"] for h in reversed(history) if h["speaker"] == "customer"), ""
+    )
+    return {
+        "reason": reason,
+        "outstanding_asks": list(sim_state.get("outstanding_asks") or []),
+        "last_customer_message": last_customer_message,
+        "root_cause": str(event.root_cause) if event.root_cause else None,
+        "attempts_so_far": sim_state.get("attempts_so_far", 0),
+        "conversation_summary": _summarize_conversation(history, sim_state, s),
+    }
+
+
+def _resolve_escalation_reason(
+    *, human_requested: bool, sim_state: dict[str, Any], base_outcome: str
+) -> str | None:
+    """The two distinct escalation triggers, in priority order: an explicit
+    human demand always wins regardless of attempt count; otherwise the real
+    stopping-rule ceilings (imported, never redefined); otherwise a plain
+    'agent decided it's out of scope' escalation."""
+    if human_requested:
+        return "customer_requested_human"
+    if (
+        sim_state["attempts_so_far"] >= MAX_RETRY_ATTEMPTS
+        or sim_state["escalation_stage"] >= MAX_ESCALATION_STAGE
+    ):
+        return "max_attempts_exceeded"
+    if base_outcome == "escalated":
+        return "out_of_scope"
+    return None
+
+
 # --- system prompts --------------------------------------------------------
 
-def _agent_system_prompt(event: Event, persona: dict[str, Any], channel: Channel) -> str:
+
+def _agent_system_prompt(
+    event: Event, persona: dict[str, Any], channel: Channel, sim_state: dict[str, Any] | None = None
+) -> str:
     medium = "a phone call" if channel == "call" else "a WhatsApp message exchange"
     counterparty = "a business accounts-payable contact" if persona["is_business"] else "the customer"
+    asks = (sim_state or {}).get("outstanding_asks") or []
+    asks_note = (
+        f" The customer still has these unaddressed asks -- address them explicitly this turn: "
+        f"{', '.join(asks)}."
+        if asks
+        else ""
+    )
     return (
         f"You are the Razorpay Recovery Agent, speaking with {counterparty} over {medium}. "
         f"This is a REHEARSAL for testing purposes, not a real customer interaction. "
         f"Case: {persona['event_type']} of Rs {persona['amount']}, root cause "
         f"{persona['root_cause'] or 'unknown'}. "
         "Speak in natural, warm Hinglish (Hindi in Roman script mixed with English business terms), "
-        "concise, never robotic. "
+        "concise, never robotic. Never repeat a previous line of yours verbatim -- vary your phrasing "
+        f"every turn.{asks_note} "
         "Bounded authority: you may offer at most a 10% discount or a short extension; anything "
         "larger, or any request you're unsure about, needs human sign-off -> outcome 'escalated'. "
         "If the other side is hostile, evasive, or the story doesn't add up -> outcome 'halted'. "
+        "Recognise TWO distinct escalation triggers: (1) you have exhausted what you're authorized "
+        "or able to resolve yourself -- treat 'I cannot resolve this myself' as a real state to reach, "
+        "not just a message-count trigger; (2) the customer explicitly asks for a human, manager, or "
+        "real person -- escalate immediately in that case regardless of how many turns you've had. "
         "FINTECH PRINCIPLE: If the customer agrees to pay, commits to a date, or asks for a payment link, "
         "money is not yet captured — mark outcome as 'ptp_promised' (Promise to Pay recorded). "
         "Only mark 'resolved' if they confirm they have completed payment or paid. Otherwise 'ongoing'. "
@@ -137,7 +400,9 @@ def _agent_system_prompt(event: Event, persona: dict[str, Any], channel: Channel
     )
 
 
-def _customer_system_prompt(event: Event, persona: dict[str, Any], channel: Channel) -> str:
+def _customer_system_prompt(
+    event: Event, persona: dict[str, Any], channel: Channel, sim_state: dict[str, Any] | None = None
+) -> str:
     medium = "a phone call" if channel == "call" else "a WhatsApp chat"
     role = "a business's accounts-payable contact" if persona["is_business"] else "a Razorpay customer"
     return (
@@ -145,9 +410,14 @@ def _customer_system_prompt(event: Event, persona: dict[str, Any], channel: Chan
         f"{persona['event_type']} of Rs {persona['amount']}. "
         f"Your disposition: {persona['disposition']}. "
         "Speak in natural, casual Hinglish (Hindi in Roman script mixed with English), short lines, "
-        "like a real person texting or talking, not a script. "
+        "like a real person texting or talking, not a script. Never repeat a previous line of yours "
+        "verbatim -- vary your phrasing. "
+        "You may realistically ask for more detail or explanation, ask that the payment link be sent "
+        "via a specific channel (e.g. WhatsApp or email), ask about a GST invoice, push back, or "
+        "occasionally not have much to add -- not every reply has to move the conversation forward. "
         "React to what the agent just said; don't repeat yourself. After a few exchanges, reach a "
-        "natural conclusion (agree, ask to escalate, or push back) rather than dragging on forever. "
+        "natural conclusion (agree, ask to escalate to a human, or push back) rather than dragging on "
+        "forever. If you genuinely want a human instead of the AI agent, say so explicitly. "
         "Reply with ONLY your next line of dialogue as plain text — no JSON, no quotes, no labels."
     )
 
@@ -158,6 +428,7 @@ def _opening_instruction(persona: dict[str, Any], channel: Channel) -> str:
 
 
 # --- JSON / text parsing (voice.py's fenced-JSON-with-fallback pattern) ---
+
 
 def _strip_fences(text: str) -> str:
     t = text.strip()
@@ -186,6 +457,7 @@ def _parse_agent_reply(text: str, fallback_reply: str) -> dict[str, Any]:
 
 
 # --- provider-turn conversion ----------------------------------------------
+
 
 def _to_provider_turns(
     history: list[dict[str, str]], self_speaker: str
@@ -224,8 +496,33 @@ _UPSET_WORDS = {"angry", "gussa", "complaint", "manager", "escalate", "bad servi
 _QUESTION_WORDS = {"kyu", "why", "kaise", "reason", "kya hua", "fail", "problem", "issue", "batao", "bataiye", "detail", "explain", "samjhao"}
 _AGREE_PHRASES = {"pay kar", "link bhej", "bhej do", "bhejo", "kar deta hoon", "karta hoon", "kar dunga", "ready to pay", "sure send", "yes send", "send link", "paid", "payment kar"}
 
+# alternate phrasings for the deterministic fallback's two most-repeatable
+# lines (the generic "keep waiting" nudge and the stalled hand-off) -- the
+# no-LLM path has zero history awareness otherwise, which is exactly what
+# caused verbatim repetition before this rewrite.
+_DEFAULT_REPLY_VARIANTS = [
+    "Samajh sakta hoon {name} ji. Aapka Rs {amount} ka payment pending hai. Kya aap abhi UPI ya card se retry karna chahenge?",
+    "Koi baat nahi {name} ji, jab bhi convenient ho Rs {amount} wala payment complete kar dijiye -- main link dobara bhi bhej sakta hoon.",
+    "{name} ji, samajhta hoon thoda busy honge. Rs {amount} ka matter hai, chahein to main abhi ek fresh payment link bhej doon?",
+]
 
-def _fallback_agent_reply(persona: dict[str, Any], message: str, turn_index: int) -> dict[str, Any]:
+_STALLED_VARIANTS = [
+    "Koi baat nahi {name} ji, main is case ko human review queue mein daal deta hoon taaki hamari accounts team aapse call par connect kar sake.",
+    "Theek hai {name} ji, is baat ko main apni senior team tak forward kar raha hoon jo directly aapse baat karegi.",
+]
+
+
+def _alternate_phrasing(reply_text: str, persona: dict[str, Any], turn_index: int) -> str:
+    variants = [v.format(name=persona["name"], amount=persona["amount"]) for v in _DEFAULT_REPLY_VARIANTS]
+    for v in variants:
+        if v != reply_text:
+            return v
+    return variants[turn_index % len(variants)]
+
+
+def _fallback_agent_reply(
+    persona: dict[str, Any], message: str, turn_index: int, sim_state: dict[str, Any] | None = None
+) -> dict[str, Any]:
     text = message.lower().strip()
 
     # 1. Fraud or security dispute -> escalate immediately to human review
@@ -239,7 +536,7 @@ def _fallback_agent_reply(persona: dict[str, Any], message: str, turn_index: int
     # 2. Hostile / Manager demand -> escalate
     if any(w in text for w in _UPSET_WORDS):
         return {
-            "reply": "Bilkul {persona['name']} ji, main is case ko senior review team ko forward kar raha hoon jo aapse directly connect karenge.",
+            "reply": f"Bilkul {persona['name']} ji, main is case ko senior review team ko forward kar raha hoon jo aapse directly connect karenge.",
             "outcome": "escalated",
             "reasoning": "Customer requested human supervisor / expressed dissatisfaction.",
         }
@@ -268,14 +565,17 @@ def _fallback_agent_reply(persona: dict[str, Any], message: str, turn_index: int
 
     # 5. Stalled without resolution after multiple turns
     if turn_index >= 3:
+        idx = turn_index % len(_STALLED_VARIANTS)
+        reply = _STALLED_VARIANTS[idx].format(name=persona["name"], amount=persona["amount"])
         return {
-            "reply": f"Koi baat nahi {persona['name']} ji, main is case ko human review queue mein daal deta hoon taaki hamari accounts team aapse call par connect kar sake.",
+            "reply": reply,
             "outcome": "escalated",
             "reasoning": "No resolution reached after multi-turn exchange; handing off to human queue.",
         }
 
+    idx = turn_index % len(_DEFAULT_REPLY_VARIANTS)
     return {
-        "reply": f"Samajh sakta hoon {persona['name']} ji. Aapka Rs {persona['amount']} ka payment pending hai. Kya aap abhi UPI ya card se retry karna chahenge?",
+        "reply": _DEFAULT_REPLY_VARIANTS[idx].format(name=persona["name"], amount=persona["amount"]),
         "outcome": "ongoing",
         "reasoning": "",
     }
@@ -301,6 +601,7 @@ def _fallback_opening(persona: dict[str, Any], channel: Channel) -> str:
 
 # --- optional Sarvam speech for "call" channel ------------------------------
 
+
 def _speak(text: str, speaker: str, channel: Channel, settings: Settings) -> str | None:
     """Base64 WAV for one line, or None. Never raises -- same degrade-gracefully
     contract as everywhere else Sarvam is used (app/agents/voice_tts.py)."""
@@ -321,12 +622,14 @@ def _with_audio(turn: dict[str, Any], channel: Channel, settings: Settings) -> d
 
 # --- ticket reference (cosmetic only -- never a DB row) ---------------------
 
+
 def _ticket_ref(event: Event) -> str:
     suffix = event.event_id[-4:].upper().replace("_", "")
     return f"SIM-{suffix}{random.randint(100, 999)}"
 
 
 # --- public API --------------------------------------------------------
+
 
 def start_session(
     event: Event,
@@ -339,6 +642,7 @@ def start_session(
     s = settings or get_settings()
     active_channel = channel if channel in ("call", "message") else pick_channel(event)
     persona = build_persona(event)
+    sim_state = _default_sim_state(mode)
 
     opening_text = _fallback_opening(persona, active_channel)
     if llm.available(s):
@@ -353,6 +657,7 @@ def start_session(
             pass
 
     opening_turn = {"speaker": "agent", "text": opening_text}
+    sim_state["last_reply_text"] = opening_text
     return {
         "mode": mode,
         "channel": active_channel,
@@ -364,6 +669,7 @@ def start_session(
         "opening_turn": _with_audio(opening_turn, active_channel, s),
         "outcome": "ongoing",
         "history": [opening_turn],
+        "sim_state": sim_state,
     }
 
 
@@ -373,33 +679,89 @@ def send_message(
     message: str,
     channel: Channel,
     *,
+    speaker: Speaker | None = None,
+    sim_state: dict[str, Any] | None = None,
     settings: Settings | None = None,
+    outcome: Outcome | None = None,
 ) -> dict[str, Any]:
-    """Interactive mode: the tester's own line, then one Agent turn."""
+    """`speaker="customer"` (default, back-compat): the tester's own line as
+    the customer, then one Agent turn (LLM or deterministic fallback).
+
+    `speaker="agent"` (S6): a human has taken over the Resolver role --
+    `message` is that human's own line, and `outcome` (if given) is trusted
+    as-supplied, never inferred from the human's freeform text.
+    """
     s = settings or get_settings()
     persona = build_persona(event)
-    new_history = [*history, {"speaker": "customer", "text": message}]
-    turn_index = sum(1 for h in new_history if h["speaker"] == "customer")
+    st = _fill_sim_state(sim_state, mode=(sim_state or {}).get("mode", "custom"))
+    active_speaker: Speaker = speaker or "customer"
+    new_history = [*history, {"speaker": active_speaker, "text": message}]
 
-    result = _fallback_agent_reply(persona, message, turn_index)
+    if active_speaker == "agent":
+        final_outcome = outcome if outcome in _VALID_OUTCOMES else "ongoing"
+        st["last_reply_text"] = message
+        agent_turn = new_history[-1]
+        result: dict[str, Any] = {
+            "turn": _with_audio(agent_turn, channel, s),
+            "outcome": final_outcome,
+            "reasoning": "human agent override (outcome supplied by the human reviewer)",
+            "history": new_history,
+            "sim_state": st,
+        }
+        if final_outcome == "escalated":
+            reason = _resolve_escalation_reason(
+                human_requested=False, sim_state=st, base_outcome=final_outcome
+            ) or "out_of_scope"
+            result["escalation"] = _build_escalation(event, st, new_history, reason, s)
+        return result
+
+    # speaker == "customer" ---------------------------------------------
+    turn_index = sum(1 for h in new_history if h["speaker"] == "customer")
+    _track_asks(st, message)
+    human_requested = _matches_any(message, _HUMAN_REQUEST_PATTERNS)
+    is_deferral = _matches_any(message, _DEFERRAL_PATTERNS)
+
+    result = _fallback_agent_reply(persona, message, turn_index, st)
     if llm.available(s):
         try:
             turns = _to_provider_turns(new_history, self_speaker="agent")
             raw = llm.chat_turns(
-                _agent_system_prompt(event, persona, channel), turns, settings=s
+                _agent_system_prompt(event, persona, channel, st), turns, settings=s
             )
             result = _parse_agent_reply(raw, result["reply"])
         except Exception:
             pass
 
-    agent_turn = {"speaker": "agent", "text": result["reply"]}
+    st["attempts_so_far"] += 1
+    if st["escalation_stage"] < MAX_ESCALATION_STAGE:
+        st["escalation_stage"] += 1
+
+    escalation_reason = _resolve_escalation_reason(
+        human_requested=human_requested, sim_state=st, base_outcome=result["outcome"]
+    )
+    if escalation_reason:
+        result = {**result, "outcome": "escalated"}
+
+    reply_text = result["reply"]
+    if reply_text == st.get("last_reply_text"):
+        reply_text = _alternate_phrasing(reply_text, persona, turn_index)
+    st["last_reply_text"] = reply_text
+    _clear_addressed_asks(st, reply_text)
+
+    _bump_clock(st, natural_pause=is_deferral)
+
+    agent_turn = {"speaker": "agent", "text": reply_text}
     new_history.append(agent_turn)
-    return {
+    out = {
         "turn": _with_audio(agent_turn, channel, s),
         "outcome": result["outcome"],
         "reasoning": result["reasoning"],
         "history": new_history,
+        "sim_state": st,
     }
+    if escalation_reason:
+        out["escalation"] = _build_escalation(event, st, new_history, escalation_reason, s)
+    return out
 
 
 def advance_conversation(
@@ -407,20 +769,48 @@ def advance_conversation(
     history: list[dict[str, str]],
     channel: Channel,
     *,
+    sim_state: dict[str, Any] | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
-    """Auto mode: one Customer turn, then one Agent turn -- two distinctly
-    prompted LLM calls, each reacting to the real transcript so far."""
+    """Auto ("ai") mode: one Customer turn, then one Agent turn -- two
+    distinctly prompted LLM calls, each reacting to the real transcript so
+    far. A deterministic per-turn roll may produce "no response" instead --
+    a distinct turn shape (see AGENTS_CONTRACT.md §12), not a chat bubble."""
     s = settings or get_settings()
     persona = build_persona(event)
-    turn_index = sum(1 for h in history if h["speaker"] == "customer")
+    st = _fill_sim_state(sim_state, mode=(sim_state or {}).get("mode", "ai"))
+    turn_index = sum(1 for h in history if h["speaker"] == "customer") + 1
+    # The response roll is seeded on total history length (not just the
+    # customer-turn count) so a repeated no-response doesn't hash to the same
+    # seed forever when a caller doesn't round-trip `sim_state` between calls
+    # -- each no-response appends a non-chat marker (below) precisely so the
+    # next roll's seed genuinely advances.
+    roll_seed = len(history)
+
+    responded = _roll_customer_response(
+        event.event_id, roll_seed, st["customer_response_probability"]
+    )
+    if not responded:
+        _advance_day_for_silence(st)
+        marker = {"speaker": "system", "text": "(customer did not respond this turn)"}
+        return {
+            "no_response": True,
+            "customer_turn": None,
+            "agent_turn": None,
+            "outcome": "ongoing",
+            "reasoning": "customer did not respond this turn (simulated silence)",
+            "history": [*history, marker],
+            "sim_state": st,
+        }
+
+    _register_response(st)
 
     customer_text = _fallback_customer_reply(persona, turn_index)
     if llm.available(s):
         try:
             turns = _to_provider_turns(history, self_speaker="customer")
             reply = llm.chat_turns(
-                _customer_system_prompt(event, persona, channel), turns, settings=s,
+                _customer_system_prompt(event, persona, channel, st), turns, settings=s,
                 max_tokens=200,
             ).strip()
             if reply:
@@ -430,58 +820,136 @@ def advance_conversation(
 
     customer_turn = {"speaker": "customer", "text": customer_text}
     history_with_customer = [*history, customer_turn]
+    _track_asks(st, customer_text)
+    human_requested = _matches_any(customer_text, _HUMAN_REQUEST_PATTERNS)
+    is_deferral = _matches_any(customer_text, _DEFERRAL_PATTERNS)
 
-    agent_result = _fallback_agent_reply(persona, customer_text, turn_index + 1)
+    agent_result = _fallback_agent_reply(persona, customer_text, turn_index, st)
     if llm.available(s):
         try:
             turns = _to_provider_turns(history_with_customer, self_speaker="agent")
             raw = llm.chat_turns(
-                _agent_system_prompt(event, persona, channel), turns, settings=s
+                _agent_system_prompt(event, persona, channel, st), turns, settings=s
             )
             agent_result = _parse_agent_reply(raw, agent_result["reply"])
         except Exception:
             pass
 
-    agent_turn = {"speaker": "agent", "text": agent_result["reply"]}
+    st["attempts_so_far"] += 1
+    if st["escalation_stage"] < MAX_ESCALATION_STAGE:
+        st["escalation_stage"] += 1
+
+    escalation_reason = _resolve_escalation_reason(
+        human_requested=human_requested, sim_state=st, base_outcome=agent_result["outcome"]
+    )
+    if escalation_reason:
+        agent_result = {**agent_result, "outcome": "escalated"}
+
+    reply_text = agent_result["reply"]
+    if reply_text == st.get("last_reply_text"):
+        reply_text = _alternate_phrasing(reply_text, persona, turn_index)
+    st["last_reply_text"] = reply_text
+    _clear_addressed_asks(st, reply_text)
+
+    _bump_clock(st, natural_pause=is_deferral)
+
+    agent_turn = {"speaker": "agent", "text": reply_text}
     new_history = [*history_with_customer, agent_turn]
-    return {
+    out = {
         # auto mode speaks BOTH voices when the channel is a call, via
         # sarvam_tts_speaker_agent / _customer -- sounds like the old
         # prerecorded two-voice transcript, just generated live.
+        "no_response": False,
         "customer_turn": _with_audio(customer_turn, channel, s),
         "agent_turn": _with_audio(agent_turn, channel, s),
         "outcome": agent_result["outcome"],
         "reasoning": agent_result["reasoning"],
         "history": new_history,
+        "sim_state": st,
     }
+    if escalation_reason:
+        out["escalation"] = _build_escalation(event, st, new_history, escalation_reason, s)
+    return out
 
 
-def simulate_payment(
+# --- payment-link click (never touches the real store, never captures for real) --
+
+_CAPTURE_FAILURE_TEXT: dict[str, str] = {
+    "wrong_otp": "OTP verification galat ho gaya, payment complete nahi hua. Ek baar aur try karte hain?",
+    "insufficient_funds": "Account mein is waqt insufficient balance hai, payment complete nahi ho paya.",
+    "user_cancelled": "Lagta hai payment page par transaction cancel ho gaya. Koi issue hua kya?",
+}
+
+
+def click_payment_link(
     event: Event,
     history: list[dict[str, str]],
     channel: Channel = "call",
     *,
+    sim_state: dict[str, Any] | None = None,
     settings: Settings | None = None,
 ) -> dict[str, Any]:
-    """Simulates the customer clicking the payment link and completing payment (payment.captured).
-    Transitions status from ptp_promised to true resolved, confirming verified revenue recovery."""
+    """Simulates the customer clicking the payment link. Calls the PURE,
+    imported `payment.resolve_fake_capture` (never `payment.apply_capture` --
+    that writes to the DB and would break the sandboxing guarantee) and
+    renders wrong_otp / insufficient_funds / user_cancelled / success --
+    weighted, never an unconditional instant "resolved"."""
     s = settings or get_settings()
     persona = build_persona(event)
-    tx_id = f"pay_sim_{event.event_id[-6:].replace('_', '')}{random.randint(100, 999)}"
+    st = _fill_sim_state(sim_state, mode=(sim_state or {}).get("mode", "custom"))
 
-    reply_text = (
-        f"Payment of Rs {persona['amount']} received successfully! "
-        f"Razorpay Transaction ID: {tx_id}. Receipt generated. Case marked RESOLVED."
-    )
+    attempt = st["capture_attempts"] + 1
+    link_id = f"sim_{event.event_id}"  # playground-owned prefix (S4) -- never persisted
+    capture = payment.resolve_fake_capture(event, link_id, settings=s, attempt=attempt)
+    st["capture_attempts"] = attempt
+
+    captured = bool(capture["captured"])
+    reason = capture["reason"]
+    amount = capture["amount"]
+
+    if captured:
+        tx_id = f"pay_sim_{event.event_id[-6:].replace('_', '')}{random.randint(100, 999)}"
+        reply_text = (
+            f"Payment of Rs {amount} received successfully! "
+            f"Razorpay Transaction ID: {tx_id}. Receipt generated. Case marked RESOLVED."
+        )
+        outcome = "resolved"
+        reasoning = (
+            f"Customer completed payment via the rehearsal payment link "
+            f"(fake gateway capture, attempt {attempt}, link {link_id})."
+        )
+        payment_id: str | None = tx_id
+    else:
+        reply_text = _CAPTURE_FAILURE_TEXT.get(
+            reason, "Payment link attempt fail ho gaya, ek baar phir try karte hain."
+        ).format()
+        payment_id = None
+        if attempt >= 3:
+            outcome = "escalated"
+            reasoning = f"Payment link failed 3 times ({reason}); handing off, capture attempts exhausted."
+        else:
+            outcome = "ongoing"
+            reasoning = f"Payment link click failed: {reason} (attempt {attempt})."
+
     confirmation_turn = {"speaker": "agent", "text": reply_text}
     new_history = [*history, confirmation_turn]
+    st["last_reply_text"] = reply_text
 
-    return {
+    result = {
         "turn": _with_audio(confirmation_turn, channel, s),
-        "outcome": "resolved",
-        "reasoning": f"Customer completed payment via Razorpay link (webhook payment.captured: {tx_id}). Verified revenue recovery.",
+        "outcome": outcome,
+        "reasoning": reasoning,
         "history": new_history,
-        "payment_id": tx_id,
-        "amount": str(persona["amount"]),
+        "payment_id": payment_id,
+        "amount": str(amount),
+        "captured": captured,
+        "reason": reason,
+        "sim_state": st,
     }
+    if outcome == "escalated":
+        result["escalation"] = _build_escalation(event, st, new_history, "max_attempts_exceeded", s)
+    return result
 
+
+# deprecated alias (S5) -- routes.py migrates to click_payment_link in Phase C
+simulate_payment = click_payment_link
