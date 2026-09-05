@@ -384,16 +384,16 @@ def _agent_system_prompt(
         "Speak in natural, warm Hinglish (Hindi in Roman script mixed with English business terms), "
         "concise, never robotic. Never repeat a previous line of yours verbatim -- vary your phrasing "
         f"every turn.{asks_note} "
-        "Bounded authority: you may offer at most a 10% discount or a short extension; anything "
-        "larger, or any request you're unsure about, needs human sign-off -> outcome 'escalated'. "
-        "If the other side is hostile, evasive, or the story doesn't add up -> outcome 'halted'. "
-        "Recognise TWO distinct escalation triggers: (1) you have exhausted what you're authorized "
-        "or able to resolve yourself -- treat 'I cannot resolve this myself' as a real state to reach, "
-        "not just a message-count trigger; (2) the customer explicitly asks for a human, manager, or "
-        "real person -- escalate immediately in that case regardless of how many turns you've had. "
-        "FINTECH PRINCIPLE: If the customer agrees to pay, commits to a date, or asks for a payment link, "
-        "money is not yet captured — mark outcome as 'ptp_promised' (Promise to Pay recorded). "
-        "Only mark 'resolved' if they confirm they have completed payment or paid. Otherwise 'ongoing'. "
+        "STRICT BOUNDED AUTHORITY & CONTEXT RULES: "
+        "- You ONLY have context for this specific pending/failed recovery payment of Rs {persona['amount']}. "
+        "- You DO NOT have authority or context for discounts, coupon codes, amount changes, past refunds, order status, deliveries, product quality, or general support issues. "
+        "- NEVER offer discounts, promo codes, or fee waivers under any circumstances. "
+        "- CRITICAL RULE: If the customer asks for ANYTHING outside this specific payment recovery (e.g. discounts, past refunds, delivery tracking, product issues, complaints) or anything you do not have context of, you MUST reply stating that you do not have context of what they asked and ask if you should escalate to a human supervisor: "
+        "'Mere paas is request ka context / authority nahi hai. Kya main is case ko human supervisor ko escalate kar doon?' (or in English: 'I do not have context of what you have asked. Should I escalate this to a human?') and mark outcome as 'escalated'. "
+        "- If the customer explicitly asks for a human, supervisor, or manager -> outcome 'escalated'. "
+        "- If the other side is hostile, fraudulent, or suspicious -> outcome 'halted'. "
+        "- If the customer agrees to pay, commits to a date, or asks for a payment link on WhatsApp/SMS: provide the secure Razorpay payment link (https://rzp.io/i/rec_{persona.get('amount', 0)}) and mark outcome as 'ptp_promised' (Promise to Pay recorded). "
+        "- Only mark 'resolved' if they confirm they have completed payment or paid. Otherwise 'ongoing'. "
         "Reply with ONLY a JSON object: "
         '{"reply": "<your next line>", "outcome": "ongoing"|"ptp_promised"|"resolved"|"escalated"|"halted", '
         '"reasoning": "<one short sentence, why this outcome>"}.'
@@ -493,6 +493,11 @@ _ROOT_CAUSE_EXPLANATIONS: dict[str, str] = {
 
 _FRAUD_WORDS = {"fraud", "scam", "nahi kiya", "wrong", "block", "galat", "hacked", "police"}
 _UPSET_WORDS = {"angry", "gussa", "complaint", "manager", "escalate", "bad service", "consumer court"}
+_OUT_OF_SCOPE_WORDS = {
+    "discount", "coupon", "promo", "sasta", "kam karo", "waive", "reduce", "cashback", "off chahiye",
+    "refund", "pichla refund", "return", "delivery", "shipment", "courier", "order status",
+    "cancel order", "damaged", "defective", "broken", "complaint", "legal", "court",
+}
 _QUESTION_WORDS = {"kyu", "why", "kaise", "reason", "kya hua", "fail", "problem", "issue", "batao", "bataiye", "detail", "explain", "samjhao"}
 _AGREE_PHRASES = {"pay kar", "link bhej", "bhej do", "bhejo", "kar deta hoon", "karta hoon", "kar dunga", "ready to pay", "sure send", "yes send", "send link", "paid", "payment kar"}
 
@@ -541,7 +546,15 @@ def _fallback_agent_reply(
             "reasoning": "Customer requested human supervisor / expressed dissatisfaction.",
         }
 
-    # 3. Questions asking why it failed / inquiry ("kyu hua", "fail kyu hua", "why")
+    # 3. Out-of-scope query (discounts, refunds, delivery, etc.) -> explicit no-context + escalate offer
+    if any(w in text for w in _OUT_OF_SCOPE_WORDS):
+        return {
+            "reply": f"Mere paas is request ka context / authority nahi hai. Kya main is case ko human supervisor / support team ko escalate kar doon?",
+            "outcome": "escalated",
+            "reasoning": "Out-of-scope inquiry (no context for discounts, refunds, or delivery); offering human escalation.",
+        }
+
+    # 4. Questions asking why it failed / inquiry ("kyu hua", "fail kyu hua", "why")
     has_question = any(w in text for w in _QUESTION_WORDS) or "?" in text
     if has_question:
         rc = persona.get("root_cause") or RootCause.UNKNOWN
@@ -552,7 +565,7 @@ def _fallback_agent_reply(
             "reasoning": f"Explained failure root cause ({rc}) in response to customer inquiry.",
         }
 
-    # 4. Genuine agreement to pay / proceed -> Promise to Pay (PTP)
+    # 5. Genuine agreement to pay / proceed -> Promise to Pay (PTP)
     has_agreement = any(p in text for p in _AGREE_PHRASES) or (
         text in {"haan", "yes", "theek hai", "ok", "okay", "sure", "done"} and not has_question
     )
@@ -563,7 +576,7 @@ def _fallback_agent_reply(
             "reasoning": "Customer committed to pay; Payment Link dispatched; Promise-to-Pay recorded (max 3 reminders scheduled).",
         }
 
-    # 5. Stalled without resolution after multiple turns
+    # 6. Stalled without resolution after multiple turns
     if turn_index >= 3:
         idx = turn_index % len(_STALLED_VARIANTS)
         reply = _STALLED_VARIANTS[idx].format(name=persona["name"], amount=persona["amount"])
@@ -645,14 +658,18 @@ def start_session(
     sim_state = _default_sim_state(mode)
 
     opening_text = _fallback_opening(persona, active_channel)
+    outcome: Outcome = "ongoing"
     if llm.available(s):
         try:
-            opening_text = llm.chat(
+            raw = llm.chat(
                 _agent_system_prompt(event, persona, active_channel),
                 _opening_instruction(persona, active_channel),
                 settings=s,
                 max_tokens=200,
-            ).strip() or opening_text
+            )
+            parsed = _parse_agent_reply(raw, opening_text)
+            opening_text = parsed.get("reply") or opening_text
+            outcome = parsed.get("outcome", "ongoing")
         except Exception:
             pass
 
@@ -667,7 +684,7 @@ def start_session(
         # (resent on every later call) stays plain text -- no point paying to
         # regenerate/re-transmit audio for lines already spoken.
         "opening_turn": _with_audio(opening_turn, active_channel, s),
-        "outcome": "ongoing",
+        "outcome": outcome,
         "history": [opening_turn],
         "sim_state": sim_state,
     }
